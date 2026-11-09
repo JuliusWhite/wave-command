@@ -1,0 +1,6 @@
+numpy>=1.26,<2.0
+opencv-python>=4.8
+ultralytics>=8.2
+PyAutoGUI>=0.9.54
+pynput>=1.7.7
+mediapipe==0.10.14

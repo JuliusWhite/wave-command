@@ -1,0 +1,1 @@
+"""Wave Command application package."""
