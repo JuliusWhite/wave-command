@@ -6,7 +6,7 @@ Wave Command is a hands-free computer interaction project. It uses a webcam to r
 
 This iteration focuses on a small set of common actions, prioritizing web-browser use. Pointing with the index finger moves the cursor; a thumb-to-index pinch triggers a left-click, and a thumb-to-middle-finger pinch triggers a right-click. Closing the hand into a fist sends the current-window close shortcut to the focused window without stopping the webcam loop. Pinch clicks are edge-triggered and have a 1.5-second cooldown; the close action is edge-triggered but bypasses that cooldown. Actions are printed to the terminal and shown on the video HUD.
 
-Cursor movement is active only while the index-pointing pose is recognized. Smoothing, a dead zone, a camera active-area margin, and a maximum speed limit reduce jitter and sudden tracking jumps. Tune these settings in `src/config.py`. The cursor uses the primary display; calibrated multi-monitor support is outside this iteration.
+Cursor movement is active only while the index-pointing pose is recognized. Position smoothing, a dead zone, a camera active-area margin, and an optional horizontal mirror reduce jitter and make the display bounds reachable. Tune these settings in `src/config.py`. The cursor uses the primary display; calibrated multi-monitor support is outside this iteration.
 
 ## Requirements
 
