@@ -51,7 +51,7 @@ Use a checkpoint trained for exactly 21 hand landmarks. Standard COCO pose model
 
 ### No click alert appears
 
-Check that landmarks 4 and 8 (left-click) or 4 and 12 (right-click) are detected confidently and the relevant pinch ratio is at or below `PINCH_THRESHOLD`. The translator clicks on a transition into a pinch, not every frame; it also applies `COMMAND_COOLDOWN_SEC`. Place the cursor over the intended target first.
+Check that landmarks 4 and 8 (left-click) or 8 and 12 (right-click) are detected confidently and the relevant pinch ratio is at or below `PINCH_THRESHOLD`. For right-click, both index and middle fingers must also be extended. The translator clicks on a transition into a pinch, not every frame; it also applies `COMMAND_COOLDOWN_SEC`. Place the cursor over the intended target first.
 
 ### Cursor does not move
 

@@ -223,14 +223,21 @@ class GestureEngine:
 
         right_pinch_ratio = None
         if (
-            thumb_tip.conf >= CONFIDENCE_THRESHOLD
+            index_tip.conf >= CONFIDENCE_THRESHOLD
             and middle_tip.conf >= CONFIDENCE_THRESHOLD
         ):
-            middle_distance = hypot(
-                middle_tip.x - thumb_tip.x,
-                middle_tip.y - thumb_tip.y,
+            index_middle_distance = hypot(
+                middle_tip.x - index_tip.x,
+                middle_tip.y - index_tip.y,
             )
-            right_pinch_ratio = middle_distance / hand_size
+            right_pinch_ratio = index_middle_distance / hand_size
+
+        index_extended = (
+            curl_ratios[0] is not None and curl_ratios[0] >= 1.0
+        )
+        middle_extended = (
+            curl_ratios[1] is not None and curl_ratios[1] >= 1.0
+        )
 
         pinch_ratios = []
         if (
@@ -242,7 +249,8 @@ class GestureEngine:
             )
         if (
             right_pinch_ratio is not None
-            and not curled_by_tip.get(12, False)
+            and index_extended
+            and middle_extended
         ):
             pinch_ratios.append(
                 (GestureState.PINCH_RIGHT_CLICK, right_pinch_ratio)

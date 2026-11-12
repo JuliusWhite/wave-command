@@ -90,12 +90,43 @@ class GestureEngineTests(unittest.TestCase):
         self.assertEqual(result.gesture, GestureState.PINCH_LEFT_CLICK)
         self.assertAlmostEqual(result.pinch_distance_ratio, 0.2)
 
-    def test_thumb_middle_pinch_is_right_click(self) -> None:
+    def test_index_middle_pinch_is_right_click(self) -> None:
+        hand = make_hand(50, 100)
+        points = list(hand.keypoints)
+        points[5] = Keypoint(5, 100.0, 100.0, 1.0, 0.5, 0.5)
+        points[6] = Keypoint(6, 100.0, 50.0, 1.0, 0.5, 0.5)
+        points[8] = Keypoint(8, 100.0, 0.0, 1.0, 0.5, 0.5)
+        points[10] = Keypoint(10, 100.0, 150.0, 1.0, 0.5, 0.5)
+        points[12] = Keypoint(12, 100.0, 10.0, 1.0, 0.5, 0.5)
+
+        result = GestureEngine(pinch_threshold=0.35).evaluate(
+            HandPrediction(tuple(points), hand.confidence)
+        )
+
+        self.assertEqual(result.gesture, GestureState.PINCH_RIGHT_CLICK)
+        self.assertAlmostEqual(result.pinch_distance_ratio, 0.1)
+
+    def test_thumb_middle_contact_does_not_trigger_right_click(self) -> None:
         result = GestureEngine(pinch_threshold=0.35).evaluate(
             make_hand(100, 250, middle_x=120)
         )
-        self.assertEqual(result.gesture, GestureState.PINCH_RIGHT_CLICK)
-        self.assertAlmostEqual(result.pinch_distance_ratio, 0.2)
+
+        self.assertNotEqual(result.gesture, GestureState.PINCH_RIGHT_CLICK)
+
+    def test_index_middle_contact_requires_both_fingers_extended(self) -> None:
+        hand = make_hand(50, 100)
+        points = list(hand.keypoints)
+        points[5] = Keypoint(5, 100.0, 100.0, 1.0, 0.5, 0.5)
+        points[6] = Keypoint(6, 100.0, 80.0, 1.0, 0.5, 0.5)
+        points[8] = Keypoint(8, 100.0, 90.0, 1.0, 0.5, 0.5)
+        points[10] = Keypoint(10, 100.0, 150.0, 1.0, 0.5, 0.5)
+        points[12] = Keypoint(12, 100.0, 91.0, 1.0, 0.5, 0.5)
+
+        result = GestureEngine(pinch_threshold=0.35).evaluate(
+            HandPrediction(tuple(points), hand.confidence)
+        )
+
+        self.assertNotEqual(result.gesture, GestureState.PINCH_RIGHT_CLICK)
 
     def test_left_pinch_wins_when_other_fingers_are_curled(self) -> None:
         result = GestureEngine().evaluate(make_left_pinch_with_curled_fingers())

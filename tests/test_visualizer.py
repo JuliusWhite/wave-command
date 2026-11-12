@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from src.recognition.gesture_engine import GestureDiagnostics, GestureState
+from src.recognition.hand_detector import HandPrediction, Keypoint
 from src.webcam.visualizer import FrameState, Visualizer
 
 
@@ -34,7 +35,24 @@ class VisualizerTests(unittest.TestCase):
         self.assertIn("Filter: fist confirm 2/3", text_lines)
         self.assertIn("Curl I/M/R/P: 0.80/1.20/--/1.10 (2/4)", text_lines)
         self.assertIn("Thumb curl: 0.50", text_lines)
-        self.assertIn("Pinch L/R: 0.20/0.60 (threshold 0.30)", text_lines)
+        self.assertIn("Pinch T-I/I-M: 0.20/0.60 (threshold 0.30)", text_lines)
+
+    def test_right_pinch_highlights_index_and_middle_tips(self) -> None:
+        cv2 = Mock()
+        hand = HandPrediction(
+            tuple(
+                Keypoint(index, float(index), float(index + 1), 1.0, 0.5, 0.5)
+                for index in range(21)
+            ),
+            1.0,
+        )
+        state = FrameState([hand], GestureState.PINCH_RIGHT_CLICK, 0.1, None)
+
+        with patch.dict(sys.modules, {"cv2": cv2}):
+            Visualizer()._draw(Mock(shape=(480, 640, 3)), state, 30.0)
+
+        pinch_line = cv2.line.call_args_list[-1]
+        self.assertEqual(pinch_line.args[1:3], ((8, 9), (12, 13)))
 
     def test_fist_does_not_stop_the_webcam_loop(self) -> None:
         cv2 = Mock()

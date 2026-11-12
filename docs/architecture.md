@@ -2,7 +2,7 @@
 
 ## Goals and safety boundary
 
-Wave Command separates hand recognition, gesture interpretation, action mapping, and webcam visualization. A fist with the index finger extended moves the cursor through PyAutoGUI; thumb-to-index and thumb-to-middle pinches trigger left and right clicks. A fist with all fingers curled requests closure of the focused window. Keyboard input is not implemented.
+Wave Command separates hand recognition, gesture interpretation, action mapping, and webcam visualization. A fist with the index finger extended moves the cursor through PyAutoGUI; a thumb-to-index pinch triggers a left click, and pinched index and middle fingertips trigger a right click. A fist with all fingers curled requests closure of the focused window. Keyboard input is not implemented.
 
 The action mappings are `PINCH_LEFT_CLICK` → `LEFT_CLICK` and `PINCH_RIGHT_CLICK` → `RIGHT_CLICK`. `POINTER_MOVE` is a continuous movement state, active only while index is extended and the other fingers are curled. Browser interactions are the first-iteration focus; the project direction remains broader computer interaction.
 
@@ -15,7 +15,7 @@ The action mappings are `PINCH_LEFT_CLICK` → `LEFT_CLICK` and `PINCH_RIGHT_CLI
 - Otherwise, MediaPipe Hands supplies the same 21-point layout. Up to two hands can be detected and drawn.
 - Each `Keypoint` contains its integer `id`, pixel coordinates `x` and `y`, confidence `conf`, and normalized image coordinates `normalized_x` and `normalized_y`.
 - `src/recognition/gesture_engine.py` evaluates geometry only; it has no camera, model, or OS-control responsibilities.
-- The rules measure pixel-space distances from thumb tip 4 to index tip 8 and middle tip 12, each divided by the wrist-to-middle-MCP distance (0 to 9). The ratio is scale-independent and avoids aspect-ratio distortion from measuring in normalized image coordinates. A ratio at or below `PINCH_THRESHOLD` (0.30) produces the corresponding left- or right-click state.
+- The rules measure pixel-space distances from thumb tip 4 to index tip 8 for left click, and index tip 8 to middle tip 12 for right click. Each distance is divided by the wrist-to-middle-MCP distance (0 to 9); the right-click pair must also be extended. The ratio is scale-independent and avoids aspect-ratio distortion from measuring in normalized image coordinates. A ratio at or below `PINCH_THRESHOLD` (0.30) produces the corresponding click state.
 - The engine also recognizes a fist-like pose with only the index extended and the thumb curled. Pointer movement uses index tip 8's normalized image coordinates.
 
 ### Translation service
@@ -24,7 +24,7 @@ The action mappings are `PINCH_LEFT_CLICK` → `LEFT_CLICK` and `PINCH_RIGHT_CLI
 
 ### Webcam and visualization service
 
-`src/webcam/visualizer.py` owns the OpenCV camera lifecycle, calls a supplied frame-processing function, draws all landmarks and skeleton connections, and renders the HUD. The thumb-to-finger line changes color when either pinch is recognized. FPS, backend, distance ratio, gesture state, and the most recent click alert are shown in the video window. Press **Q** to exit.
+`src/webcam/visualizer.py` owns the OpenCV camera lifecycle, calls a supplied frame-processing function, draws all landmarks and skeleton connections, and renders the HUD. The active pinch pair is highlighted when a click gesture is recognized. FPS, backend, distance ratio, gesture state, and the most recent click alert are shown in the video window. Press **Q** to exit.
 
 ### Application entry point
 
@@ -73,7 +73,7 @@ The index convention follows MediaPipe Hands:
 | 9 | Middle finger MCP | 20 | Pinky tip |
 | 10 | Middle finger PIP | | |
 
-`HAND_CONNECTIONS` in `src/config.py` lists the bone segments used to draw the hand. Left-click pinch uses tip indices 4 and 8; right-click pinch uses 4 and 12. Pointer movement uses index tip 8. Point 0 and point 9 define the reference hand size.
+`HAND_CONNECTIONS` in `src/config.py` lists the bone segments used to draw the hand. Left-click pinch uses tip indices 4 and 8; right-click pinch uses 8 and 12. Pointer movement uses index tip 8. Point 0 and point 9 define the reference hand size.
 
 ## Extending gesture recognition
 
