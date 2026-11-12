@@ -5,8 +5,8 @@ from __future__ import annotations
 import time
 
 from src.config import HUD_ALERT_DURATION_SEC
-from src.recognition import GestureEngine, HandDetector
-from src.translation import CommandTranslator
+from src.recognition import GestureEngine, HandDetector, GestureState
+from src.translation import CommandTranslator, PointerController
 from src.webcam import FrameState, Visualizer
 
 
@@ -14,6 +14,7 @@ def main() -> None:
     detector = HandDetector()
     gesture_engine = GestureEngine()
     translator = CommandTranslator()
+    pointer_controller = PointerController()
     last_alert: str | None = None
     last_alert_at = 0.0
     visualizer = Visualizer(backend_name=detector.backend_name)
@@ -24,6 +25,14 @@ def main() -> None:
         hands = detector.detect(frame)
         visualizer.backend_name = detector.backend_name
         gesture_result = gesture_engine.evaluate(hands[0] if hands else None)
+        if gesture_result.gesture == GestureState.POINTER_MOVE and hands:
+            index_tip = hands[0].keypoints[8]
+            pointer_controller.move_to(
+                index_tip.normalized_x,
+                index_tip.normalized_y,
+            )
+        else:
+            pointer_controller.reset()
         alert = translator.process(gesture_result.gesture)
         if alert:
             last_alert = alert

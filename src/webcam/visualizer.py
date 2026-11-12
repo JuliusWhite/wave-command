@@ -43,6 +43,7 @@ class Visualizer:
         (100, 230, 120),  # pinky
     )
     _PINCH_COLOR = (80, 230, 80)
+    _POINTER_COLOR = (255, 200, 80)
     _OPEN_COLOR = (40, 100, 255)
     _TEXT_COLOR = (245, 245, 245)
 
@@ -88,6 +89,10 @@ class Visualizer:
 
         for hand_index, hand in enumerate(state.hands):
             pinch_tip_index = None
+            is_pointing = (
+                hand_index == 0
+                and state.gesture == GestureState.POINTER_MOVE
+            )
             if hand_index == 0:
                 if state.gesture == GestureState.PINCH_LEFT_CLICK:
                     pinch_tip_index = 8
@@ -97,6 +102,7 @@ class Visualizer:
                 frame,
                 hand,
                 pinch_tip_index=pinch_tip_index,
+                is_pointing=is_pointing,
             )
 
         if state.gesture in {
@@ -104,6 +110,8 @@ class Visualizer:
             GestureState.PINCH_RIGHT_CLICK,
         }:
             gesture_color = self._PINCH_COLOR
+        elif state.gesture == GestureState.POINTER_MOVE:
+            gesture_color = self._POINTER_COLOR
         else:
             gesture_color = self._TEXT_COLOR
         distance_text = (
@@ -162,7 +170,7 @@ class Visualizer:
             ),
             (f"Selected pinch ratio: {distance_text}", self._TEXT_COLOR),
             (
-                "Pinch: click | Fist: close window | Q: quit",
+                "Point: move | Pinch: click | Fist: close window | Q: quit",
                 self._TEXT_COLOR,
             ),
         )
@@ -197,6 +205,7 @@ class Visualizer:
         frame: Any,
         hand: HandPrediction,
         pinch_tip_index: int | None,
+        is_pointing: bool,
     ) -> None:
         import cv2
 
@@ -226,7 +235,9 @@ class Visualizer:
         pinch_tip = points[
             pinch_tip_index if pinch_tip_index is not None else 8
         ]
-        if pinch_tip_index is not None:
+        if is_pointing:
+            color = self._POINTER_COLOR
+        elif pinch_tip_index is not None:
             color = self._PINCH_COLOR
         else:
             color = self._OPEN_COLOR

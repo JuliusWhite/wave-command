@@ -56,10 +56,17 @@ A fist is maintained when at least three of the four non-thumb fingertips are cl
 
 The HUD shows the raw classifier state, per-finger curl ratios (index/middle/ring/pinky), and both pinch ratios alongside the filtered gesture state. Its filter status shows fist confirmation, release, or neutral-rearm frame progress. Use these values when tuning gesture rules against real webcam poses.
 
+## Cursor movement
+
+The `POINTER_MOVE` pose is recognized when all four non-thumb fingers have confident landmarks, the index curl ratio is at least `POINTER_INDEX_EXTENSION_RATIO`, and the middle, ring, and pinky ratios are at or below `POINTER_OTHER_FINGER_CURL_RATIO`. The ratio compares fingertip-to-MCP distance with PIP-to-MCP distance. An active thumb-to-index pinch takes priority over pointing.
+
+While pointing, `PointerController` maps the index fingertip's normalized image coordinates to the primary display. `POINTER_ACTIVE_MARGIN` limits the camera area used, `POINTER_SMOOTHING` controls cursor interpolation, `POINTER_DEADZONE_PX` suppresses small cursor changes, `POINTER_SCREEN_MARGIN_PX` keeps the cursor away from the screen edge, and `POINTER_MIRROR_X` reverses horizontal movement when desired. Smoothing state resets when pointing ends. Pinches trigger left/right clicks at the current cursor position on a gesture transition; held pinches do not repeat, and new clicks are subject to `COMMAND_COOLDOWN_SEC`.
+
 Defaults are centralized in `src/config.py`:
 
 - `CONFIDENCE_THRESHOLD = 0.5`
 - `PINCH_THRESHOLD = 0.30`
+- Pointer tuning values use the `POINTER_*` constants in `src/config.py`.
 - `COMMAND_COOLDOWN_SEC = 1.5`
 - `CAMERA_ID = 0`
 

@@ -6,10 +6,10 @@
 main.py                         Application wiring
 src/config.py                   Shared thresholds and camera/model paths
 src/recognition/                 Model wrapper and geometric gesture rules
-src/translation/                 Gesture-to-mouse-action mapping
+src/translation/                 Gesture-to-mouse-action mapping and pointer control
 src/webcam/                      Camera capture and drawing/HUD
 scripts/setup_models.py          Verify MediaPipe and optional YOLO weights
-tests/                           Unit tests for gestures and translation
+tests/                           Unit tests for gestures, pointer control, and translation
 models/                          Optional local YOLO checkpoint and training output
 docs/                            Project documentation
 .session-notes/                  Local-only session notes; ignored by Git
@@ -29,11 +29,11 @@ Run unit tests:
 python -m unittest discover -s tests -v
 ```
 
-The tests cover pinch classification, fist filtering, idle/missing-hand behavior, left/right button mapping, translator edge-trigger behavior, and cooldown suppression. Click dispatch is injected in tests; the tests do not require a webcam, OS mouse input, or model inference.
+The tests cover pinch and pointing pose classification, idle/missing-hand behavior, pointer coordinate mapping and smoothing, left/right button mapping, translator edge-trigger behavior, and cooldown suppression. OS mouse movement/click callbacks are injected; the tests do not require a webcam or model inference.
 
 ## Configuration
 
-Edit `src/config.py` for camera ID, model path, confidence threshold, pinch ratio, cooldown, HUD duration, and skeleton connections. Keep behavior shared between services in configuration rather than duplicating magic values.
+Edit `src/config.py` for camera ID, model path, confidence threshold, pinch ratio, pointer active area, smoothing, dead zone, horizontal mirroring, cooldown, HUD duration, and skeleton connections. Keep behavior shared between services in configuration rather than duplicating magic values.
 
 ## Troubleshooting
 
@@ -52,6 +52,10 @@ Use a checkpoint trained for exactly 21 hand landmarks. Standard COCO pose model
 ### No click alert appears
 
 Check that landmarks 4 and 8 (left-click) or 4 and 12 (right-click) are detected confidently and the relevant pinch ratio is at or below `PINCH_THRESHOLD`. The translator clicks on a transition into a pinch, not every frame; it also applies `COMMAND_COOLDOWN_SEC`. Place the cursor over the intended target first.
+
+### Cursor does not move
+
+Hold the index-pointing pose (index extended, other three fingers curled) and check that the HUD shows `POINTER_MOVE`. The pointing pose is suppressed while a fist is releasing and until the hand returns to a neutral state. Adjust the pointer ratio thresholds, active area, smoothing, or mirror setting in `src/config.py` if needed.
 
 ## Session notes before commits
 
