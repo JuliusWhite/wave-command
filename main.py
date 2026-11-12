@@ -1,11 +1,11 @@
-"""Wave Command entry point: webcam -> recognition -> dry-run translation."""
+"""Wave Command entry point: webcam -> recognition -> mouse actions."""
 
 from __future__ import annotations
 
 import time
 
 from src.config import HUD_ALERT_DURATION_SEC
-from src.recognition import GestureEngine, HandDetector, GestureState
+from src.recognition import GestureEngine, HandDetector
 from src.translation import CommandTranslator
 from src.webcam import FrameState, Visualizer
 
@@ -39,6 +39,7 @@ def main() -> None:
             gesture=gesture_result.gesture,
             pinch_distance_ratio=gesture_result.pinch_distance_ratio,
             alert=visible_alert,
+            diagnostics=gesture_engine.diagnostics,
         )
 
     try:

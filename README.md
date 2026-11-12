@@ -4,9 +4,9 @@ Wave Command is a hands-free computer interaction project. It uses a webcam to r
 
 ## First iteration
 
-This iteration focuses on a small set of common actions, prioritizing web-browser use. It recognizes a thumb-to-index pinch and maps it to a **simulated** `CLOSE_WINDOW` action. The action is printed to the terminal and shown on the video HUD; it does not send keyboard or mouse input or execute operating-system commands. Pinch events are edge-triggered and have a 1.5-second cooldown.
+This iteration focuses on a small set of common actions, prioritizing web-browser use. A thumb-to-index pinch triggers a left-click, and a thumb-to-middle-finger pinch triggers a right-click. Closing the hand into a fist sends the current-window close request to the focused window without stopping the webcam loop. Pinch clicks are edge-triggered and have a 1.5-second cooldown; the close action is edge-triggered but bypasses that cooldown. Actions are printed to the terminal and shown on the video HUD.
 
-Mouse cursor movement is not included in this iteration. These MVP boundaries do not limit the broader project direction.
+Cursor movement is not included in this iteration, so position the cursor manually before making a pinch. Pinches require a closer thumb-to-finger distance to reduce early clicks. These boundaries do not limit the broader project direction.
 
 ## Requirements
 
@@ -43,12 +43,12 @@ python scripts/setup_models.py
 python main.py
 ```
 
-Allow webcam access if prompted. The live view displays hand landmarks, skeletal connections, pinch distance, gesture state, FPS, and simulated action alerts. Press **Q** while the video window is focused to quit.
+Allow webcam access if prompted. The live view displays hand landmarks, skeletal connections, gesture and pinch diagnostics, FPS, and action alerts. Press **Q** while the video window is focused to quit.
 
 ## Project layout
 
 - `src/recognition/` — hand landmark detection and geometric gesture rules.
-- `src/translation/` — gesture-to-action mapping in dry-run mode only.
+- `src/translation/` — gesture-to-mouse-action mapping.
 - `src/webcam/` — camera capture and visualization.
 - `scripts/setup_models.py` — backend and optional weights verification.
 - `docs/architecture.md` — architecture, data flow, and landmark reference.

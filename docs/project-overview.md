@@ -8,9 +8,9 @@ The longer-term project may support interactions across applications and the ope
 
 ## First-iteration behavior
 
-The current implementation recognizes a thumb-to-index pinch using landmark indices 4 and 8. The translator maps that gesture to `CLOSE_WINDOW` in **dry-run mode**: it prints a simulated alert and the video HUD displays it. The program does not send keyboard or mouse input and does not execute OS commands.
+The current implementation recognizes thumb-to-index and thumb-to-middle pinches for left/right clicks, and a fist for closing the focused window. Keyboard input and cursor movement are not implemented.
 
-Mouse cursor movement is outside this iteration's scope. The pinch/action mapping is an initial implementation, not a finalized gesture vocabulary.
+Position the cursor manually before pinching. The pinch/action mapping is an initial implementation, not a finalized gesture vocabulary.
 
 ## Recognition backend
 
@@ -20,7 +20,7 @@ The application can also use a compatible YOLO hand-pose checkpoint at `models/h
 
 ## Safety and scope
 
-- Translation only prints labels. There is no active OS-command adapter.
-- Adding a real command executor requires an explicit design, safety review, and tests.
+- Mouse clicks are real OS input; recognition does not move the cursor or issue keyboard input.
+- Translation is separated from recognition so click dispatch can be tested independently.
 - Recognition and visualization are kept separate from translation so each can evolve independently.
 - Up to two hands can be displayed, while the initial gesture pipeline evaluates the first detected hand.

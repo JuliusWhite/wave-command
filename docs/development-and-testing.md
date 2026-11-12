@@ -6,7 +6,7 @@
 main.py                         Application wiring
 src/config.py                   Shared thresholds and camera/model paths
 src/recognition/                 Model wrapper and geometric gesture rules
-src/translation/                 Gesture-to-action mapping (dry-run only)
+src/translation/                 Gesture-to-mouse-action mapping
 src/webcam/                      Camera capture and drawing/HUD
 scripts/setup_models.py          Verify MediaPipe and optional YOLO weights
 tests/                           Unit tests for gestures and translation
@@ -29,7 +29,7 @@ Run unit tests:
 python -m unittest discover -s tests -v
 ```
 
-The tests cover the pinch ratio, idle/missing-hand behavior, translator edge-trigger behavior, and cooldown suppression. They do not require a webcam or run model inference.
+The tests cover pinch classification, fist filtering, idle/missing-hand behavior, left/right button mapping, translator edge-trigger behavior, and cooldown suppression. Click dispatch is injected in tests; the tests do not require a webcam, OS mouse input, or model inference.
 
 ## Configuration
 
@@ -49,9 +49,9 @@ That is expected when running with MediaPipe. The model file is optional. `scrip
 
 Use a checkpoint trained for exactly 21 hand landmarks. Standard COCO pose models predict 17 body landmarks and cannot be used for this pinch rule. The detector falls back to MediaPipe if the inference result has a different keypoint shape.
 
-### No simulated alert appears
+### No click alert appears
 
-Check that landmarks 4 and 8 are detected confidently and the pinch ratio shown in the HUD is at or below `PINCH_THRESHOLD`. The translator emits on a transition into pinch, not every frame; it also applies `COMMAND_COOLDOWN_SEC`.
+Check that landmarks 4 and 8 (left-click) or 4 and 12 (right-click) are detected confidently and the relevant pinch ratio is at or below `PINCH_THRESHOLD`. The translator clicks on a transition into a pinch, not every frame; it also applies `COMMAND_COOLDOWN_SEC`. Place the cursor over the intended target first.
 
 ## Session notes before commits
 
@@ -64,4 +64,3 @@ Before each commit, add or update a dated entry in the local `.session-notes/` f
 5. Remaining work or known limitations.
 
 Use `.session-notes/TEMPLATE.md` as a starting point. After committing, optionally add the commit hash to the entry. This directory is ignored by Git and is not included in commits or pushed to GitHub. It is local-only, **not encrypted** or access-controlled; do not store credentials or other sensitive material there.
-

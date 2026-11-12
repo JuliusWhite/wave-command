@@ -2,9 +2,9 @@
 
 ## Goals and safety boundary
 
-Wave Command separates hand recognition, gesture interpretation, action mapping, and webcam visualization. The first iteration is a dry run: the translator emits an action label to the terminal, and the webcam HUD displays it. No module sends keyboard or mouse input or executes operating-system commands. `PyAutoGUI` and `pynput` are included as dependencies for future work but are not imported by the runtime.
+Wave Command separates hand recognition, gesture interpretation, action mapping, and webcam visualization. Thumb-to-index and thumb-to-middle pinches trigger left and right clicks. A fist requests closure of the focused window. Cursor movement and keyboard input are not implemented.
 
-The current action mapping is `PINCH_CLOSE_WINDOW` → `CLOSE_WINDOW (Simulated)`. Browser interactions are the first-iteration focus; the project direction remains broader computer interaction.
+The action mappings are `PINCH_LEFT_CLICK` → `LEFT_CLICK` and `PINCH_RIGHT_CLICK` → `RIGHT_CLICK`. Browser interactions are the first-iteration focus; the project direction remains broader computer interaction.
 
 ## Modules
 
@@ -15,15 +15,15 @@ The current action mapping is `PINCH_CLOSE_WINDOW` → `CLOSE_WINDOW (Simulated)
 - Otherwise, MediaPipe Hands supplies the same 21-point layout. Up to two hands can be detected and drawn.
 - Each `Keypoint` contains its integer `id`, pixel coordinates `x` and `y`, confidence `conf`, and normalized image coordinates `normalized_x` and `normalized_y`.
 - `src/recognition/gesture_engine.py` evaluates geometry only; it has no camera, model, or OS-control responsibilities.
-- The initial rule measures the pixel-space distance between keypoints 4 and 8 and divides it by the wrist-to-middle-MCP distance (0 to 9). The ratio is scale-independent and avoids aspect-ratio distortion from measuring in normalized image coordinates. A ratio at or below `PINCH_THRESHOLD` (0.35) produces `PINCH_CLOSE_WINDOW`.
+- The rules measure pixel-space distances from thumb tip 4 to index tip 8 and middle tip 12, each divided by the wrist-to-middle-MCP distance (0 to 9). The ratio is scale-independent and avoids aspect-ratio distortion from measuring in normalized image coordinates. A ratio at or below `PINCH_THRESHOLD` (0.30) produces the corresponding left- or right-click state.
 
 ### Translation service
 
-`src/translation/command_translator.py` maps gesture states to action labels. It emits only on the transition into a pinch, so holding a pinch does not repeatedly trigger the action. Further transitions are suppressed until `COMMAND_COOLDOWN_SEC` (1.5 seconds) has elapsed. The only output is a formatted simulated message; there is deliberately no command-execution implementation.
+`src/translation/command_translator.py` maps pinch states to mouse buttons and action labels. It clicks only on the transition into a pinch, so holding a pinch does not repeatedly trigger the action. Further click transitions are suppressed until `COMMAND_COOLDOWN_SEC` (1.5 seconds) has elapsed. Click dispatch is injectable for tests; runtime input uses PyAutoGUI.
 
 ### Webcam and visualization service
 
-`src/webcam/visualizer.py` owns the OpenCV camera lifecycle, calls a supplied frame-processing function, draws all landmarks and skeleton connections, and renders the HUD. The thumb-to-index line changes color when the recognized state is a pinch. FPS, backend, distance ratio, gesture state, and the most recent simulated alert are shown in the video window. Press **Q** to exit.
+`src/webcam/visualizer.py` owns the OpenCV camera lifecycle, calls a supplied frame-processing function, draws all landmarks and skeleton connections, and renders the HUD. The thumb-to-finger line changes color when either pinch is recognized. FPS, backend, distance ratio, gesture state, and the most recent click alert are shown in the video window. Press **Q** to exit.
 
 ### Application entry point
 
@@ -46,12 +46,12 @@ GestureEngine.evaluate(first hand or None)
         |  GestureResult(state, pinch_distance_ratio)
         v
 CommandTranslator.process(state)
-        |  optional simulated alert string; never executes it
+        | mouse click and optional action message
         v
 Visualizer draws landmarks, skeleton, pinch line, state, and alert
 ```
 
-The detector may return multiple hands; the visualizer draws all of them, while the initial gesture/translation flow uses the first detection only.
+The detector may return multiple hands; the visualizer draws all of them, while the initial gesture and translation flow uses the first detection only.
 
 ## 21 hand keypoints
 
@@ -71,13 +71,13 @@ The index convention follows MediaPipe Hands:
 | 9 | Middle finger MCP | 20 | Pinky tip |
 | 10 | Middle finger PIP | | |
 
-`HAND_CONNECTIONS` in `src/config.py` lists the bone segments used to draw the hand. The pinch uses tip indices 4 and 8; point 0 and point 9 define the reference hand size.
+`HAND_CONNECTIONS` in `src/config.py` lists the bone segments used to draw the hand. Left-click pinch uses tip indices 4 and 8; right-click pinch uses 4 and 12. Point 0 and point 9 define the reference hand size.
 
 ## Extending gesture recognition
 
 1. Add a gesture state to `GestureState`.
 2. Implement its geometric rule in `GestureEngine.evaluate`, using confidence-checked landmarks and a scale-normalized distance or angle.
-3. Add the gesture-to-action entry to `CommandTranslator.ACTIONS`. Keep translation limited to a dry-run label until real command execution is explicitly designed and reviewed.
+3. Add the gesture-to-action entry and mouse-button mapping to `CommandTranslator`.
 4. Add or update tests for both the geometric rule and transition/cooldown behavior.
 5. Update the HUD or architecture documentation if the gesture needs extra visualization or configuration.
 

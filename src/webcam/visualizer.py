@@ -13,7 +13,13 @@ from ..config import (
     PINCH_THRESHOLD,
     WINDOW_NAME,
 )
-from ..recognition.gesture_engine import GestureState
+from ..recognition.gesture_engine import (
+    FIST_CONFIRM_FRAMES,
+    FIST_REARM_FRAMES,
+    FIST_RELEASE_FRAMES,
+    GestureDiagnostics,
+    GestureState,
+)
 from ..recognition.hand_detector import HandPrediction
 
 
@@ -23,6 +29,7 @@ class FrameState:
     gesture: GestureState
     pinch_distance_ratio: float | None
     alert: str | None
+    diagnostics: GestureDiagnostics | None = None
 
 
 class Visualizer:
@@ -80,32 +87,84 @@ class Visualizer:
         import cv2
 
         for hand_index, hand in enumerate(state.hands):
+            pinch_tip_index = None
+            if hand_index == 0:
+                if state.gesture == GestureState.PINCH_LEFT_CLICK:
+                    pinch_tip_index = 8
+                elif state.gesture == GestureState.PINCH_RIGHT_CLICK:
+                    pinch_tip_index = 12
             self._draw_hand(
                 frame,
                 hand,
-                is_pinching=(
-                    hand_index == 0
-                    and state.gesture == GestureState.PINCH_CLOSE_WINDOW
-                ),
+                pinch_tip_index=pinch_tip_index,
             )
 
-        gesture_color = (
-            self._PINCH_COLOR
-            if state.gesture == GestureState.PINCH_CLOSE_WINDOW
-            else self._TEXT_COLOR
-        )
+        if state.gesture in {
+            GestureState.PINCH_LEFT_CLICK,
+            GestureState.PINCH_RIGHT_CLICK,
+        }:
+            gesture_color = self._PINCH_COLOR
+        else:
+            gesture_color = self._TEXT_COLOR
         distance_text = (
             f"{state.pinch_distance_ratio:.2f}"
             if state.pinch_distance_ratio is not None
             else "--"
         )
+        diagnostics = state.diagnostics or GestureDiagnostics()
+        curl_text = "/".join(
+            "--" if ratio is None else f"{ratio:.2f}"
+            for ratio in diagnostics.curl_ratios
+        )
+        left_pinch_text = (
+            "--"
+            if diagnostics.left_pinch_ratio is None
+            else f"{diagnostics.left_pinch_ratio:.2f}"
+        )
+        right_pinch_text = (
+            "--"
+            if diagnostics.right_pinch_ratio is None
+            else f"{diagnostics.right_pinch_ratio:.2f}"
+        )
+        if diagnostics.fist_active:
+            filter_text = (
+                "Filter: fist active, release "
+                f"{diagnostics.fist_release_frames}/{FIST_RELEASE_FRAMES}"
+            )
+        elif diagnostics.fist_rearm_pending:
+            filter_text = (
+                "Filter: neutral rearm "
+                f"{diagnostics.fist_rearm_frames}/{FIST_REARM_FRAMES}"
+            )
+        elif diagnostics.fist_confirmation_frames:
+            filter_text = (
+                "Filter: fist confirm "
+                f"{diagnostics.fist_confirmation_frames}/{FIST_CONFIRM_FRAMES}"
+            )
+        else:
+            filter_text = "Filter: ready"
         hud_lines = (
             (f"Wave Command | {self.backend_name}", self._TEXT_COLOR),
             (f"FPS: {fps:.1f}", self._TEXT_COLOR),
             (f"Gesture: {state.gesture.value}", gesture_color),
-            (f"Pinch ratio: {distance_text} (threshold {PINCH_THRESHOLD:.2f})",
-             self._TEXT_COLOR),
-            ("Dry-run only | Press Q to quit", self._TEXT_COLOR),
+            (f"Raw: {diagnostics.raw_gesture.value}", self._TEXT_COLOR),
+            (filter_text, self._TEXT_COLOR),
+            (
+                "Curl I/M/R/P: "
+                f"{curl_text} "
+                f"({diagnostics.curled_fingers}/{diagnostics.visible_fingers})",
+                self._TEXT_COLOR,
+            ),
+            (
+                f"Pinch L/R: {left_pinch_text}/{right_pinch_text} "
+                f"(threshold {PINCH_THRESHOLD:.2f})",
+                self._TEXT_COLOR,
+            ),
+            (f"Selected pinch ratio: {distance_text}", self._TEXT_COLOR),
+            (
+                "Pinch: click | Fist: close window | Q: quit",
+                self._TEXT_COLOR,
+            ),
         )
         for line_index, (text, color) in enumerate(hud_lines):
             cv2.putText(
@@ -137,7 +196,7 @@ class Visualizer:
         self,
         frame: Any,
         hand: HandPrediction,
-        is_pinching: bool,
+        pinch_tip_index: int | None,
     ) -> None:
         import cv2
 
@@ -164,12 +223,17 @@ class Visualizer:
             )
 
         thumb_tip = points[4]
-        index_tip = points[8]
-        color = self._PINCH_COLOR if is_pinching else self._OPEN_COLOR
+        pinch_tip = points[
+            pinch_tip_index if pinch_tip_index is not None else 8
+        ]
+        if pinch_tip_index is not None:
+            color = self._PINCH_COLOR
+        else:
+            color = self._OPEN_COLOR
         cv2.line(
             frame,
             (round(thumb_tip.x), round(thumb_tip.y)),
-            (round(index_tip.x), round(index_tip.y)),
+            (round(pinch_tip.x), round(pinch_tip.y)),
             color,
             3,
             cv2.LINE_AA,
