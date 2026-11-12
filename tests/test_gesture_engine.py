@@ -37,11 +37,9 @@ def make_curled_hand(
         points[pip_index] = Keypoint(pip_index, pip_x, 70.0, 1.0, 0.5, 0.5)
         points[tip_index] = Keypoint(tip_index, 100.0, 120.0, 1.0, 0.5, 0.5)
 
-    points[2] = Keypoint(2, 100.0, 100.0, 1.0, 0.5, 0.5)
-    points[3] = Keypoint(3, 110.0, 100.0, 1.0, 0.5, 0.5)
     thumb = points[4]
     points[4] = Keypoint(
-        4, 105.0, 100.0, thumb_confidence, thumb.normalized_x,
+        4, thumb.x, thumb.y, thumb_confidence, thumb.normalized_x,
         thumb.normalized_y,
     )
     if low_confidence_tip is not None:
@@ -106,17 +104,6 @@ class GestureEngineTests(unittest.TestCase):
         result = GestureEngine().evaluate(make_pointing_hand())
 
         self.assertEqual(result.gesture, GestureState.POINTER_MOVE)
-
-    def test_index_pointing_requires_thumb_curled_into_fist(self) -> None:
-        hand = make_pointing_hand()
-        points = list(hand.keypoints)
-        points[4] = Keypoint(4, 125.0, 100.0, 1.0, 0.625, 0.5)
-
-        result = GestureEngine().evaluate(
-            HandPrediction(tuple(points), hand.confidence)
-        )
-
-        self.assertNotEqual(result.gesture, GestureState.POINTER_MOVE)
 
     def test_open_distance_is_idle(self) -> None:
         result = GestureEngine(pinch_threshold=0.35).evaluate(make_hand(50, 150))

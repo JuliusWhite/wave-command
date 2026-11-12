@@ -29,11 +29,11 @@ Run unit tests:
 python -m unittest discover -s tests -v
 ```
 
-The tests cover pinch and index-extended fist pose classification, idle/missing-hand behavior, pointer coordinate mapping and smoothing, left/right button mapping, translator edge-trigger behavior, and cooldown suppression. OS mouse movement/click callbacks are injected; the tests do not require a webcam or model inference.
+The tests cover pinch and pointing pose classification, idle/missing-hand behavior, pointer coordinate mapping and smoothing, left/right button mapping, translator edge-trigger behavior, and cooldown suppression. OS mouse movement/click callbacks are injected; the tests do not require a webcam or model inference.
 
 ## Configuration
 
-Edit `src/config.py` for camera ID, model path, confidence threshold, pinch ratio, pointer pose ratios, active area, smoothing, speed limit, dead zone, horizontal mirroring, cooldown, HUD duration, and skeleton connections. Keep behavior shared between services in configuration rather than duplicating magic values.
+Edit `src/config.py` for camera ID, model path, confidence threshold, pinch ratio, pointer active area, smoothing, dead zone, horizontal mirroring, cooldown, HUD duration, and skeleton connections. Keep behavior shared between services in configuration rather than duplicating magic values.
 
 ## Troubleshooting
 
@@ -55,7 +55,7 @@ Check that landmarks 4 and 8 (left-click) or 4 and 12 (right-click) are detected
 
 ### Cursor does not move
 
-Hold a fist with the index extended and thumb curled, and check that the HUD shows `POINTER_MOVE`. The pose is suppressed while a fist is releasing and until the hand returns to a neutral state. Adjust the pointer ratio thresholds, active area, smoothing, or mirror setting in `src/config.py` if needed.
+Hold the index-pointing pose (index extended, other three fingers curled) and check that the HUD shows `POINTER_MOVE`. The pointing pose is suppressed while a fist is releasing and until the hand returns to a neutral state. Adjust the pointer ratio thresholds, active area, smoothing, or mirror setting in `src/config.py` if needed.
 
 ## Session notes before commits
 

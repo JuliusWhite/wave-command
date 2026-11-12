@@ -8,7 +8,7 @@ The longer-term project may support interactions across applications and the ope
 
 ## First-iteration behavior
 
-The current implementation recognizes a fist with the index extended for cursor movement, thumb-to-index and thumb-to-middle pinches for left/right clicks, and a fully closed fist for closing the focused window. Cursor movement uses the normalized coordinates of index tip 8; smoothing and the active screen area are configurable. Keyboard input is not implemented.
+The current implementation recognizes an index-pointing pose for cursor movement, thumb-to-index and thumb-to-middle pinches for left/right clicks, and a fist for closing the focused window. Pointing movement uses the normalized coordinates of index tip 8; cursor smoothing and the active screen area are configurable. Keyboard input is not implemented.
 
 The pointer is limited to the primary display and has no interactive calibration flow. The pinch/action mapping is an initial implementation, not a finalized gesture vocabulary.
 

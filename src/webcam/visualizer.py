@@ -134,11 +134,6 @@ class Visualizer:
             if diagnostics.right_pinch_ratio is None
             else f"{diagnostics.right_pinch_ratio:.2f}"
         )
-        thumb_curl_text = (
-            "--"
-            if diagnostics.thumb_curl_ratio is None
-            else f"{diagnostics.thumb_curl_ratio:.2f}"
-        )
         if diagnostics.fist_active:
             filter_text = (
                 "Filter: fist active, release "
@@ -168,7 +163,6 @@ class Visualizer:
                 f"({diagnostics.curled_fingers}/{diagnostics.visible_fingers})",
                 self._TEXT_COLOR,
             ),
-            (f"Thumb curl: {thumb_curl_text}", self._TEXT_COLOR),
             (
                 f"Pinch L/R: {left_pinch_text}/{right_pinch_text} "
                 f"(threshold {PINCH_THRESHOLD:.2f})",

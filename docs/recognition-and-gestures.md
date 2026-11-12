@@ -54,16 +54,16 @@ When an index-tip ratio is at or below `PINCH_THRESHOLD`, the state is `PINCH_LE
 
 A fist is maintained when at least three of the four non-thumb fingertips are closer to the middle-finger MCP (the palm reference point) than their PIP joints, with the corresponding landmarks meeting the confidence threshold. To start a fist gesture, all confidently visible fingers must be curled for three consecutive frames; this prevents a partially opened hand from triggering a close. A fully curled fist takes precedence over a pinch, while a pinch can win over a partial curl only when its pinched finger is not curled. After activation, the fist remains active until it is absent for six consecutive frames, then requires three neutral frames before another gesture can trigger. The gesture requests closure of the currently focused window on Windows and sends Alt+F4 on other platforms. The close gesture bypasses the click cooldown, and the webcam loop continues processing after the gesture.
 
-The HUD shows the raw classifier state, thumb curl ratio, per-finger curl ratios (index/middle/ring/pinky), and both pinch ratios alongside the filtered gesture state. Its filter status shows fist confirmation, release, or neutral-rearm frame progress. Use these values when tuning gesture rules against real webcam poses.
+The HUD shows the raw classifier state, per-finger curl ratios (index/middle/ring/pinky), and both pinch ratios alongside the filtered gesture state. Its filter status shows fist confirmation, release, or neutral-rearm frame progress. Use these values when tuning gesture rules against real webcam poses.
 
 ## Cursor movement
 
-The `POINTER_MOVE` pose requires confident thumb and finger landmarks. The thumb must be curled, measured as the thumb-tip-to-MCP distance divided by the IP-to-MCP distance and limited by `POINTER_THUMB_CURL_RATIO`. The index curl ratio must be at least `POINTER_INDEX_EXTENSION_RATIO`; the middle, ring, and pinky ratios must be at or below `POINTER_OTHER_FINGER_CURL_RATIO`. Those finger ratios compare fingertip-to-MCP distance with PIP-to-MCP distance. An active thumb-to-index pinch takes priority over pointing.
+The `POINTER_MOVE` pose is recognized when all four non-thumb fingers have confident landmarks, the index curl ratio is at least `POINTER_INDEX_EXTENSION_RATIO`, and the middle, ring, and pinky ratios are at or below `POINTER_OTHER_FINGER_CURL_RATIO`. The ratio compares fingertip-to-MCP distance with PIP-to-MCP distance. An active thumb-to-index pinch takes priority over pointing.
 
 ### Using it
 
 1. Start the app with `python main.py` and hold one hand where the webcam can see it.
-2. Extend your index finger and curl your thumb, middle, ring, and pinky fingers into a fist. Keep your thumb away from the index fingertip so it is not read as a left-click pinch.
+2. Extend your index finger and curl your middle, ring, and pinky fingers. Keep your thumb away from the index fingertip so it is not read as a left-click pinch.
 3. Check that the HUD says `Gesture: POINTER_MOVE`, then move your hand; the cursor follows the index fingertip on the primary display.
 4. Open your hand fully (or move it out of view) to stop movement. After a fist, wait until the HUD filter shows `ready` before pointing again.
 

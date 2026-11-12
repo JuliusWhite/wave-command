@@ -19,7 +19,6 @@ class VisualizerTests(unittest.TestCase):
                 curled_fingers=2,
                 visible_fingers=4,
                 curl_ratios=(0.8, 1.2, None, 1.1),
-                thumb_curl_ratio=0.5,
                 left_pinch_ratio=0.2,
                 right_pinch_ratio=0.6,
                 fist_confirmation_frames=2,
@@ -33,7 +32,6 @@ class VisualizerTests(unittest.TestCase):
         self.assertIn("Raw: PINCH_LEFT_CLICK", text_lines)
         self.assertIn("Filter: fist confirm 2/3", text_lines)
         self.assertIn("Curl I/M/R/P: 0.80/1.20/--/1.10 (2/4)", text_lines)
-        self.assertIn("Thumb curl: 0.50", text_lines)
         self.assertIn("Pinch L/R: 0.20/0.60 (threshold 0.30)", text_lines)
 
     def test_fist_does_not_stop_the_webcam_loop(self) -> None:
