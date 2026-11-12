@@ -11,6 +11,7 @@ from ..config import (
     PINCH_THRESHOLD,
     POINTER_INDEX_EXTENSION_RATIO,
     POINTER_OTHER_FINGER_CURL_RATIO,
+    POINTER_THUMB_CURL_RATIO,
 )
 from .hand_detector import HandPrediction
 
@@ -33,6 +34,7 @@ class GestureDiagnostics:
     curled_fingers: int = 0
     visible_fingers: int = 0
     curl_ratios: tuple[float | None, ...] = (None, None, None, None)
+    thumb_curl_ratio: float | None = None
     left_pinch_ratio: float | None = None
     right_pinch_ratio: float | None = None
     fist_confirmation_frames: int = 0
@@ -146,6 +148,8 @@ class GestureEngine:
             return GestureResult(GestureState.IDLE, None), GestureDiagnostics()
 
         wrist = hand.keypoints[0]
+        thumb_mcp = hand.keypoints[2]
+        thumb_ip = hand.keypoints[3]
         thumb_tip = hand.keypoints[4]
         index_tip = hand.keypoints[8]
         middle_mcp = hand.keypoints[9]
@@ -163,6 +167,22 @@ class GestureEngine:
         hand_size = hypot(middle_mcp.x - wrist.x, middle_mcp.y - wrist.y)
         if hand_size <= 1e-6:
             return GestureResult(GestureState.IDLE, None), GestureDiagnostics()
+
+        thumb_curl_ratio = None
+        if min(
+            thumb_mcp.conf,
+            thumb_ip.conf,
+            thumb_tip.conf,
+        ) >= CONFIDENCE_THRESHOLD:
+            thumb_ip_distance = hypot(
+                thumb_ip.x - thumb_mcp.x,
+                thumb_ip.y - thumb_mcp.y,
+            )
+            if thumb_ip_distance > 1e-6:
+                thumb_curl_ratio = hypot(
+                    thumb_tip.x - thumb_mcp.x,
+                    thumb_tip.y - thumb_mcp.y,
+                ) / thumb_ip_distance
 
         curled_fingers = 0
         visible_fingers = 0
@@ -236,7 +256,9 @@ class GestureEngine:
                 item for item in pinch_ratios if item[1] <= self.pinch_threshold
             ]
             pointing_pose = (
-                curl_ratios[0] is not None
+                thumb_curl_ratio is not None
+                and thumb_curl_ratio <= POINTER_THUMB_CURL_RATIO
+                and curl_ratios[0] is not None
                 and curl_ratios[0] >= POINTER_INDEX_EXTENSION_RATIO
                 and all(
                     ratio is not None
@@ -272,6 +294,7 @@ class GestureEngine:
             curled_fingers=curled_fingers,
             visible_fingers=visible_fingers,
             curl_ratios=tuple(curl_ratios),
+            thumb_curl_ratio=thumb_curl_ratio,
             left_pinch_ratio=left_pinch_ratio,
             right_pinch_ratio=right_pinch_ratio,
         )
