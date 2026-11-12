@@ -74,14 +74,6 @@ def make_opening_left_pinch() -> HandPrediction:
     return HandPrediction(tuple(points), hand.confidence)
 
 
-def make_pointing_hand() -> HandPrediction:
-    hand = make_curled_hand()
-    points = list(hand.keypoints)
-    points[6] = Keypoint(6, 100.0, 70.0, 1.0, 0.5, 0.5)
-    points[8] = Keypoint(8, 100.0, 20.0, 1.0, 0.5, 0.5)
-    return HandPrediction(tuple(points), hand.confidence)
-
-
 class GestureEngineTests(unittest.TestCase):
     def test_thumb_index_pinch_is_left_click(self) -> None:
         result = GestureEngine(pinch_threshold=0.35).evaluate(make_hand(100, 120))
@@ -99,11 +91,6 @@ class GestureEngineTests(unittest.TestCase):
         result = GestureEngine().evaluate(make_left_pinch_with_curled_fingers())
 
         self.assertEqual(result.gesture, GestureState.PINCH_LEFT_CLICK)
-
-    def test_index_pointing_pose_is_pointer_move(self) -> None:
-        result = GestureEngine().evaluate(make_pointing_hand())
-
-        self.assertEqual(result.gesture, GestureState.POINTER_MOVE)
 
     def test_open_distance_is_idle(self) -> None:
         result = GestureEngine(pinch_threshold=0.35).evaluate(make_hand(50, 150))

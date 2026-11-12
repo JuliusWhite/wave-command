@@ -9,8 +9,6 @@ from math import hypot
 from ..config import (
     CONFIDENCE_THRESHOLD,
     PINCH_THRESHOLD,
-    POINTER_INDEX_EXTENSION_RATIO,
-    POINTER_OTHER_FINGER_CURL_RATIO,
 )
 from .hand_detector import HandPrediction
 
@@ -24,7 +22,6 @@ class GestureState(str, Enum):
     PINCH_LEFT_CLICK = "PINCH_LEFT_CLICK"
     PINCH_RIGHT_CLICK = "PINCH_RIGHT_CLICK"
     FIST_CLOSE_WINDOW = "FIST_CLOSE_WINDOW"
-    POINTER_MOVE = "POINTER_MOVE"
 
 
 @dataclass(frozen=True)
@@ -94,10 +91,7 @@ class GestureEngine:
         if self._fist_active:
             if (
                 result.gesture == GestureState.FIST_CLOSE_WINDOW
-                or (
-                    result.gesture != GestureState.POINTER_MOVE
-                    and curled_fingers >= 3
-                )
+                or curled_fingers >= 3
             ):
                 self._fist_release_frames = 0
                 return GestureResult(GestureState.FIST_CLOSE_WINDOW, None)
@@ -235,23 +229,7 @@ class GestureEngine:
             active_pinches = [
                 item for item in pinch_ratios if item[1] <= self.pinch_threshold
             ]
-            pointing_pose = (
-                curl_ratios[0] is not None
-                and curl_ratios[0] >= POINTER_INDEX_EXTENSION_RATIO
-                and all(
-                    ratio is not None
-                    and ratio <= POINTER_OTHER_FINGER_CURL_RATIO
-                    for ratio in curl_ratios[1:]
-                )
-            )
-            left_pinch_active = any(
-                item[0] == GestureState.PINCH_LEFT_CLICK
-                for item in active_pinches
-            )
-            if pointing_pose and not left_pinch_active:
-                gesture = GestureState.POINTER_MOVE
-                distance_ratio = None
-            elif active_pinches:
+            if active_pinches:
                 gesture, distance_ratio = min(
                     active_pinches,
                     key=lambda item: item[1],

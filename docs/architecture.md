@@ -2,9 +2,9 @@
 
 ## Goals and safety boundary
 
-Wave Command separates hand recognition, gesture interpretation, action mapping, and webcam visualization. An index-pointing pose moves the cursor through PyAutoGUI; thumb-to-index and thumb-to-middle pinches trigger left and right clicks. A fist requests closure of the focused window. Keyboard input is not implemented.
+Wave Command separates hand recognition, gesture interpretation, action mapping, and webcam visualization. Thumb-to-index and thumb-to-middle pinches trigger left and right clicks. A fist requests closure of the focused window. Cursor movement and keyboard input are not implemented.
 
-The action mappings are `PINCH_LEFT_CLICK` → `LEFT_CLICK` and `PINCH_RIGHT_CLICK` → `RIGHT_CLICK`. `POINTER_MOVE` is a continuous movement state, active only while index is extended and the other fingers are curled. Browser interactions are the first-iteration focus; the project direction remains broader computer interaction.
+The action mappings are `PINCH_LEFT_CLICK` → `LEFT_CLICK` and `PINCH_RIGHT_CLICK` → `RIGHT_CLICK`. Browser interactions are the first-iteration focus; the project direction remains broader computer interaction.
 
 ## Modules
 
@@ -16,11 +16,10 @@ The action mappings are `PINCH_LEFT_CLICK` → `LEFT_CLICK` and `PINCH_RIGHT_CLI
 - Each `Keypoint` contains its integer `id`, pixel coordinates `x` and `y`, confidence `conf`, and normalized image coordinates `normalized_x` and `normalized_y`.
 - `src/recognition/gesture_engine.py` evaluates geometry only; it has no camera, model, or OS-control responsibilities.
 - The rules measure pixel-space distances from thumb tip 4 to index tip 8 and middle tip 12, each divided by the wrist-to-middle-MCP distance (0 to 9). The ratio is scale-independent and avoids aspect-ratio distortion from measuring in normalized image coordinates. A ratio at or below `PINCH_THRESHOLD` (0.30) produces the corresponding left- or right-click state.
-- The engine also recognizes a pointing pose from normalized finger-curl ratios. Pointer movement uses index tip 8's normalized image coordinates.
 
 ### Translation service
 
-`src/translation/command_translator.py` maps pinch states to mouse buttons and action labels. It clicks only on the transition into a pinch, so holding a pinch does not repeatedly trigger the action. Further click transitions are suppressed until `COMMAND_COOLDOWN_SEC` (1.5 seconds) has elapsed. `src/translation/pointer_controller.py` maps the pointing fingertip to the primary display, with a configurable active area, smoothing, dead zone, and horizontal mirroring. Pointer movement is continuous while `POINTER_MOVE` is active. The movement callable is injectable for tests; runtime input uses PyAutoGUI.
+`src/translation/command_translator.py` maps pinch states to mouse buttons and action labels. It clicks only on the transition into a pinch, so holding a pinch does not repeatedly trigger the action. Further click transitions are suppressed until `COMMAND_COOLDOWN_SEC` (1.5 seconds) has elapsed. Click dispatch is injectable for tests; runtime input uses PyAutoGUI.
 
 ### Webcam and visualization service
 
@@ -28,7 +27,7 @@ The action mappings are `PINCH_LEFT_CLICK` → `LEFT_CLICK` and `PINCH_RIGHT_CLI
 
 ### Application entry point
 
-`main.py` wires the services together. For each frame, it requests detections, evaluates the first detected hand (or `IDLE` if none), moves the cursor while `POINTER_MOVE` is active, passes the state to the translator, and returns a `FrameState` to the visualizer. The detector is closed even when the camera loop exits with an error.
+`main.py` wires the services together. For each frame, it requests detections, evaluates the first detected hand (or `IDLE` if none), passes the state to the translator, and returns a `FrameState` to the visualizer. The detector is closed even when the camera loop exits with an error.
 
 ### Setup script
 
@@ -46,14 +45,13 @@ HandDetector.detect(frame)
 GestureEngine.evaluate(first hand or None)
         |  GestureResult(state, pinch_distance_ratio)
         v
-CommandTranslator.process(state)     PointerController.move_to(x, y)
-        |                                    |
-        +---------- mouse input -------------+
+CommandTranslator.process(state)
+        | mouse click and optional action message
         v
 Visualizer draws landmarks, skeleton, pinch line, state, and alert
 ```
 
-The detector may return multiple hands; the visualizer draws all of them, while the initial gesture, pointer, and translation flow uses the first detection only.
+The detector may return multiple hands; the visualizer draws all of them, while the initial gesture and translation flow uses the first detection only.
 
 ## 21 hand keypoints
 
@@ -73,7 +71,7 @@ The index convention follows MediaPipe Hands:
 | 9 | Middle finger MCP | 20 | Pinky tip |
 | 10 | Middle finger PIP | | |
 
-`HAND_CONNECTIONS` in `src/config.py` lists the bone segments used to draw the hand. Left-click pinch uses tip indices 4 and 8; right-click pinch uses 4 and 12. Pointer movement uses index tip 8. Point 0 and point 9 define the reference hand size.
+`HAND_CONNECTIONS` in `src/config.py` lists the bone segments used to draw the hand. Left-click pinch uses tip indices 4 and 8; right-click pinch uses 4 and 12. Point 0 and point 9 define the reference hand size.
 
 ## Extending gesture recognition
 
