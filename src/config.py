@@ -9,7 +9,7 @@ YOLO_HAND_MODEL_PATH = MODELS_DIR / "hand-pose.pt"
 CAMERA_ID = 0
 CONFIDENCE_THRESHOLD = 0.5
 
-# Pinch ratios use wrist-to-middle-MCP distance as the hand-size reference.
+# Ratio of thumb-to-finger tip distance to wrist-middle-MCP distance.
 PINCH_THRESHOLD = 0.30
 COMMAND_COOLDOWN_SEC = 1.5
 HUD_ALERT_DURATION_SEC = 2.5

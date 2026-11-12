@@ -88,20 +88,20 @@ class Visualizer:
         import cv2
 
         for hand_index, hand in enumerate(state.hands):
-            pinch_landmarks = None
+            pinch_tip_index = None
             is_pointing = (
                 hand_index == 0
                 and state.gesture == GestureState.POINTER_MOVE
             )
             if hand_index == 0:
                 if state.gesture == GestureState.PINCH_LEFT_CLICK:
-                    pinch_landmarks = (4, 8)
+                    pinch_tip_index = 8
                 elif state.gesture == GestureState.PINCH_RIGHT_CLICK:
-                    pinch_landmarks = (8, 12)
+                    pinch_tip_index = 12
             self._draw_hand(
                 frame,
                 hand,
-                pinch_landmarks=pinch_landmarks,
+                pinch_tip_index=pinch_tip_index,
                 is_pointing=is_pointing,
             )
 
@@ -170,7 +170,7 @@ class Visualizer:
             ),
             (f"Thumb curl: {thumb_curl_text}", self._TEXT_COLOR),
             (
-                f"Pinch T-I/I-M: {left_pinch_text}/{right_pinch_text} "
+                f"Pinch L/R: {left_pinch_text}/{right_pinch_text} "
                 f"(threshold {PINCH_THRESHOLD:.2f})",
                 self._TEXT_COLOR,
             ),
@@ -210,7 +210,7 @@ class Visualizer:
         self,
         frame: Any,
         hand: HandPrediction,
-        pinch_landmarks: tuple[int, int] | None,
+        pinch_tip_index: int | None,
         is_pointing: bool,
     ) -> None:
         import cv2
@@ -237,19 +237,20 @@ class Visualizer:
                 cv2.LINE_AA,
             )
 
-        line_start_index, line_end_index = pinch_landmarks or (4, 8)
-        line_start = points[line_start_index]
-        line_end = points[line_end_index]
+        thumb_tip = points[4]
+        pinch_tip = points[
+            pinch_tip_index if pinch_tip_index is not None else 8
+        ]
         if is_pointing:
             color = self._POINTER_COLOR
-        elif pinch_landmarks is not None:
+        elif pinch_tip_index is not None:
             color = self._PINCH_COLOR
         else:
             color = self._OPEN_COLOR
         cv2.line(
             frame,
-            (round(line_start.x), round(line_start.y)),
-            (round(line_end.x), round(line_end.y)),
+            (round(thumb_tip.x), round(thumb_tip.y)),
+            (round(pinch_tip.x), round(pinch_tip.y)),
             color,
             3,
             cv2.LINE_AA,

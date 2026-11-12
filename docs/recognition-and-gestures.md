@@ -42,15 +42,15 @@ The ordering matches MediaPipe Hands:
 
 ## Pinch rules
 
-`GestureEngine.evaluate()` requires a hand with 21 points and confidence at least `CONFIDENCE_THRESHOLD` for the wrist (0) and middle-finger MCP (9). It normalizes pinch distances by the wrist-to-middle-MCP hand size:
+`GestureEngine.evaluate()` requires a hand with 21 points and confidence at least `CONFIDENCE_THRESHOLD` for the wrist (0), thumb tip (4), and middle-finger MCP (9). It computes each available finger's fingertip distance from the thumb tip, normalized by hand size:
 
 ```text
 hand_size = distance(point[0], point[9])
-left_pinch_ratio = distance(point[4], point[8]) / hand_size
-right_pinch_ratio = distance(point[8], point[12]) / hand_size
+index_pinch_ratio = distance(point[4], point[8]) / hand_size
+middle_pinch_ratio = distance(point[4], point[12]) / hand_size
 ```
 
-When the thumb and index fingertips are within `PINCH_THRESHOLD`, the state is `PINCH_LEFT_CLICK`. When the index and middle fingertips are within the threshold and both fingers are extended, the state is `PINCH_RIGHT_CLICK`. If both gestures are active, the smaller ratio wins. The ratios use pixel coordinates and are normalized by hand size, reducing sensitivity to how close the hand is to the camera. A missing hand, a low-confidence required landmark, or an invalid/near-zero reference distance produces `IDLE`.
+When an index-tip ratio is at or below `PINCH_THRESHOLD`, the state is `PINCH_LEFT_CLICK`. When a middle-tip ratio is at or below the threshold, the state is `PINCH_RIGHT_CLICK`. If both are below threshold, the smaller ratio wins. The ratio is based on pixel coordinates, and normalizing by hand size reduces sensitivity to how close the hand is to the camera. A missing hand, a low-confidence required landmark, or an invalid/near-zero reference distance produces `IDLE`.
 
 A fist is maintained when at least three of the four non-thumb fingertips are closer to the middle-finger MCP (the palm reference point) than their PIP joints, with the corresponding landmarks meeting the confidence threshold. To start a fist gesture, all confidently visible fingers must be curled for three consecutive frames; this prevents a partially opened hand from triggering a close. A fully curled fist takes precedence over a pinch, while a pinch can win over a partial curl only when its pinched finger is not curled. After activation, the fist remains active until it is absent for six consecutive frames, then requires three neutral frames before another gesture can trigger. The gesture requests closure of the currently focused window on Windows and sends Alt+F4 on other platforms. The close gesture bypasses the click cooldown, and the webcam loop continues processing after the gesture.
 
