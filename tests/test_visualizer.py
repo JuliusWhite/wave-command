@@ -30,9 +30,9 @@ class VisualizerTests(unittest.TestCase):
 
         text_lines = [call.args[1] for call in cv2.putText.call_args_list]
         self.assertIn("Raw: PINCH_LEFT_CLICK", text_lines)
-        self.assertIn("Filter: fist confirm 2/3", text_lines)
+        self.assertIn("Filter: tips together confirm 2/3", text_lines)
         self.assertIn("Curl I/M/R/P: 0.80/1.20/--/1.10 (2/4)", text_lines)
-        self.assertIn("Pinch L/R: 0.20/0.60 (threshold 0.30)", text_lines)
+        self.assertIn("Pinch L/R: 0.20/0.60 (threshold 0.45)", text_lines)
 
     def test_fist_does_not_stop_the_webcam_loop(self) -> None:
         cv2 = Mock()

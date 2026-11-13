@@ -29,7 +29,7 @@ Run unit tests:
 python -m unittest discover -s tests -v
 ```
 
-The tests cover pinch classification, fist filtering, idle/missing-hand behavior, left/right button mapping, translator edge-trigger behavior, and cooldown suppression. Click dispatch is injected in tests; the tests do not require a webcam, OS mouse input, or model inference.
+The tests cover pinch classification, ambiguous pinch rejection, open-hand tab-swipe direction and threshold, tab shortcut mapping and cooldown, idle/missing-hand behavior, translator edge-trigger behavior, and click cooldown suppression. Scroll and close-window gesture tests remain skipped while those features are disabled. Input dispatch is injected in tests; the tests do not require a webcam, OS input, or model inference.
 
 ## Configuration
 

@@ -92,6 +92,76 @@ class CommandTranslatorTests(unittest.TestCase):
         self.assertEqual(buttons, ["right"])
         self.assertIn("RIGHT_CLICK (Executed)", messages[0])
 
+    @unittest.skip("Scroll actions temporarily disabled")
+    def test_scroll_direction_uses_configured_amount_without_click_cooldown(
+        self,
+    ) -> None:
+        scrolls: list[int] = []
+        translator = CommandTranslator(
+            cooldown_sec=10,
+            scroll=scrolls.append,
+        )
+
+        translator.process(GestureState.SCROLL_DOWN)
+        translator.process(GestureState.IDLE)
+        translator.process(GestureState.SCROLL_UP)
+
+        self.assertEqual(scrolls, [-10, 10])
+
+    def test_tab_swipes_send_browser_navigation_shortcuts(self) -> None:
+        hotkeys: list[tuple[str, ...]] = []
+        current_time = [10.0]
+        translator = CommandTranslator(
+            cooldown_sec=10,
+            clock=lambda: current_time[0],
+            hotkey=lambda *keys: hotkeys.append(keys),
+        )
+
+        translator.process(GestureState.NEXT_TAB)
+        translator.process(GestureState.IDLE)
+        current_time[0] += 1.0
+        translator.process(GestureState.PREVIOUS_TAB)
+
+        self.assertEqual(
+            hotkeys,
+            [("ctrl", "tab"), ("ctrl", "shift", "tab")],
+        )
+
+    def test_tab_cooldown_blocks_repeat_and_opposite_swipes(self) -> None:
+        hotkeys: list[tuple[str, ...]] = []
+        current_time = [10.0]
+        translator = CommandTranslator(
+            cooldown_sec=0,
+            clock=lambda: current_time[0],
+            hotkey=lambda *keys: hotkeys.append(keys),
+        )
+
+        translator.process(GestureState.NEXT_TAB)
+        translator.process(GestureState.IDLE)
+        current_time[0] = 10.5
+        translator.process(GestureState.PREVIOUS_TAB)
+        translator.process(GestureState.IDLE)
+        current_time[0] = 10.75
+        translator.process(GestureState.NEXT_TAB)
+        translator.process(GestureState.IDLE)
+        current_time[0] = 11.0
+        translator.process(GestureState.PREVIOUS_TAB)
+
+        self.assertEqual(
+            hotkeys,
+            [("ctrl", "tab"), ("ctrl", "shift", "tab")],
+        )
+
+    def test_scroll_action_is_disabled(self) -> None:
+        scrolls: list[int] = []
+        translator = CommandTranslator(scroll=scrolls.append)
+
+        result = translator.process(GestureState.SCROLL_DOWN)
+
+        self.assertIsNone(result)
+        self.assertEqual(scrolls, [])
+
+    @unittest.skip("Close-window action temporarily disabled")
     def test_fist_closes_window_without_clicking(self) -> None:
         messages: list[str] = []
         buttons: list[str] = []
@@ -112,6 +182,7 @@ class CommandTranslatorTests(unittest.TestCase):
         self.assertEqual(buttons, [])
         self.assertIn("CLOSE_WINDOW (Requested)", messages[0])
 
+    @unittest.skip("Close-window action temporarily disabled")
     def test_fist_close_is_not_blocked_by_click_cooldown(self) -> None:
         close_calls: list[bool] = []
         current_time = [10.0]
@@ -129,6 +200,18 @@ class CommandTranslatorTests(unittest.TestCase):
         )
 
         self.assertEqual(close_calls, [True])
+
+    def test_close_window_action_is_disabled(self) -> None:
+        close_calls: list[bool] = []
+        translator = CommandTranslator(
+            cooldown_sec=0,
+            close_window=lambda: close_calls.append(True),
+        )
+
+        result = translator.process(GestureState.FIST_CLOSE_WINDOW)
+
+        self.assertIsNone(result)
+        self.assertEqual(close_calls, [])
 
     def test_cooldown_suppresses_new_pinch_transition(self) -> None:
         messages: list[str] = []

@@ -4,9 +4,9 @@ Wave Command is a hands-free computer interaction project. It uses a webcam to r
 
 ## First iteration
 
-This iteration focuses on a small set of common actions, prioritizing web-browser use. A thumb-to-index pinch triggers a left-click, and a thumb-to-middle-finger pinch triggers a right-click. Closing the hand into a fist sends the current-window close request to the focused window without stopping the webcam loop. Pinch clicks are edge-triggered and have a 1.5-second cooldown; the close action is edge-triggered but bypasses that cooldown. Actions are printed to the terminal and shown on the video HUD.
+This iteration focuses on a small set of common actions, prioritizing web-browser use. A thumb-to-index pinch triggers a left-click, and a thumb-to-middle-finger pinch triggers a right-click. With an open hand, swiping from the right side of the camera view to the left selects the previous browser tab; swiping left-to-right selects the next tab. Pinch clicks have a 1.5-second cooldown, and tab switches have a 1-second cooldown. Actions are printed to the terminal and shown on the video HUD. Scrolling and close-window gestures are temporarily disabled.
 
-Cursor movement is not included in this iteration, so position the cursor manually before making a pinch. Pinches require a closer thumb-to-finger distance to reduce early clicks. These boundaries do not limit the broader project direction.
+Cursor movement is not included in this iteration, so position the cursor manually over content before clicking. A horizontal wrist swipe must move at least `1.25` hand sizes to switch tabs. The pinch threshold is `0.45` times the wrist-to-middle-MCP hand size, allowing clicks before the fingertips touch. If both pinch ratios are within the threshold but differ by less than `0.08`, the pose is treated as ambiguous and does not click. These boundaries do not limit the broader project direction.
 
 ## Requirements
 

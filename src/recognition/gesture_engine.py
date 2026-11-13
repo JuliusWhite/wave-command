@@ -4,24 +4,32 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from enum import Enum
+# from itertools import combinations
 from math import hypot
 
 from ..config import (
     CONFIDENCE_THRESHOLD,
+    PINCH_DOMINANCE_MARGIN,
     PINCH_THRESHOLD,
+    TAB_SWIPE_DISTANCE_RATIO,
 )
 from .hand_detector import HandPrediction
 
 FIST_CONFIRM_FRAMES = 3
 FIST_RELEASE_FRAMES = 6
 FIST_REARM_FRAMES = 3
+# FINGERTIP_CLUSTER_THRESHOLD = 0.15
 
 
 class GestureState(str, Enum):
     IDLE = "IDLE"
     PINCH_LEFT_CLICK = "PINCH_LEFT_CLICK"
     PINCH_RIGHT_CLICK = "PINCH_RIGHT_CLICK"
+    SCROLL_UP = "SCROLL_UP"
+    SCROLL_DOWN = "SCROLL_DOWN"
     FIST_CLOSE_WINDOW = "FIST_CLOSE_WINDOW"
+    NEXT_TAB = "NEXT_TAB"
+    PREVIOUS_TAB = "PREVIOUS_TAB"
 
 
 @dataclass(frozen=True)
@@ -37,6 +45,10 @@ class GestureDiagnostics:
     fist_rearm_frames: int = 0
     fist_active: bool = False
     fist_rearm_pending: bool = False
+    open_hand: bool = False
+    wrist_x: float | None = None
+    # wrist_y: float | None = None  # Retained for the disabled scroll gesture.
+    hand_size: float | None = None
 
 
 @dataclass(frozen=True)
@@ -56,6 +68,10 @@ class GestureEngine:
         self._fist_release_frames = 0
         self._fist_rearm_pending = False
         self._fist_rearm_frames = 0
+        # self._scroll_origin_y: float | None = None
+        # self._scroll_origin_size: float | None = None
+        self._tab_swipe_origin_x: float | None = None
+        self._tab_swipe_origin_size: float | None = None
         self._diagnostics = GestureDiagnostics()
 
     @property
@@ -71,11 +87,49 @@ class GestureEngine:
         )
 
     def evaluate(self, hand: HandPrediction | None) -> GestureResult:
-        """Classify a hand, requiring a stable fist before triggering."""
+        """Classify pinches and horizontal open-hand tab swipes."""
         result, diagnostics = self._classify(hand)
+
+        # Scrolling disabled; retain its detector for possible reactivation.
+        # if (
+        #     diagnostics.open_hand
+        #     and diagnostics.wrist_y is not None
+        #     and diagnostics.hand_size is not None
+        # ):
+        #     scroll_gesture = self._scroll_from_open_hand(
+        #         diagnostics.wrist_y,
+        #         diagnostics.hand_size,
+        #     )
+        #     if scroll_gesture is not None:
+        #         result = GestureResult(scroll_gesture, None)
+        #         diagnostics = replace(
+        #             diagnostics,
+        #             raw_gesture=scroll_gesture,
+        #         )
+        # else:
+        #     self._scroll_origin_y = None
+        #     self._scroll_origin_size = None
+
+        if (
+            diagnostics.open_hand
+            and diagnostics.wrist_x is not None
+            and diagnostics.hand_size is not None
+        ):
+            tab_gesture = self._tab_from_open_hand(
+                diagnostics.wrist_x,
+                diagnostics.hand_size,
+            )
+            if tab_gesture is not None:
+                result = GestureResult(tab_gesture, None)
+                diagnostics = replace(
+                    diagnostics,
+                    raw_gesture=tab_gesture,
+                )
+        else:
+            self._tab_swipe_origin_x = None
+            self._tab_swipe_origin_size = None
+
         self._diagnostics = diagnostics
-        curled_fingers = diagnostics.curled_fingers
-        visible_fingers = diagnostics.visible_fingers
 
         if self._fist_rearm_pending:
             if result.gesture == GestureState.IDLE:
@@ -89,10 +143,7 @@ class GestureEngine:
             return GestureResult(GestureState.IDLE, None)
 
         if self._fist_active:
-            if (
-                result.gesture == GestureState.FIST_CLOSE_WINDOW
-                or curled_fingers >= 3
-            ):
+            if result.gesture == GestureState.FIST_CLOSE_WINDOW:
                 self._fist_release_frames = 0
                 return GestureResult(GestureState.FIST_CLOSE_WINDOW, None)
 
@@ -108,13 +159,6 @@ class GestureEngine:
             return GestureResult(GestureState.IDLE, None)
 
         if result.gesture == GestureState.FIST_CLOSE_WINDOW:
-            if curled_fingers < visible_fingers:
-                self._fist_candidate_frames = 0
-                return GestureResult(
-                    self._stable_gesture,
-                    result.pinch_distance_ratio,
-                )
-
             self._fist_candidate_frames += 1
             if self._fist_candidate_frames < FIST_CONFIRM_FRAMES:
                 return GestureResult(
@@ -131,11 +175,65 @@ class GestureEngine:
         self._stable_gesture = result.gesture
         return result
 
+    # Scrolling disabled; retain for possible reactivation.
+    # def _scroll_from_open_hand(
+    #     self,
+    #     wrist_y: float,
+    #     hand_size: float,
+    # ) -> GestureState | None:
+    #     if self._scroll_origin_y is None or self._scroll_origin_size is None:
+    #         self._scroll_origin_y = wrist_y
+    #         self._scroll_origin_size = hand_size
+    #         return None
+    #
+    #     reference_size = (self._scroll_origin_size + hand_size) / 2
+    #     displacement_ratio = (self._scroll_origin_y - wrist_y) / (
+    #         reference_size
+    #     )
+    #     if abs(displacement_ratio) < SCROLL_DISTANCE_RATIO:
+    #         return None
+    #
+    #     self._scroll_origin_y = None
+    #     self._scroll_origin_size = None
+    #     return (
+    #         GestureState.SCROLL_DOWN
+    #         if displacement_ratio > 0
+    #         else GestureState.SCROLL_UP
+    #     )
+
+    def _tab_from_open_hand(
+        self,
+        wrist_x: float,
+        hand_size: float,
+    ) -> GestureState | None:
+        if (
+            self._tab_swipe_origin_x is None
+            or self._tab_swipe_origin_size is None
+        ):
+            self._tab_swipe_origin_x = wrist_x
+            self._tab_swipe_origin_size = hand_size
+            return None
+
+        reference_size = (self._tab_swipe_origin_size + hand_size) / 2
+        displacement_ratio = (self._tab_swipe_origin_x - wrist_x) / (
+            reference_size
+        )
+        if abs(displacement_ratio) < TAB_SWIPE_DISTANCE_RATIO:
+            return None
+
+        self._tab_swipe_origin_x = None
+        self._tab_swipe_origin_size = None
+        return (
+            GestureState.PREVIOUS_TAB
+            if displacement_ratio > 0
+            else GestureState.NEXT_TAB
+        )
+
     def _classify(
         self,
         hand: HandPrediction | None,
     ) -> tuple[GestureResult, GestureDiagnostics]:
-        """Classify finger curls and pinches normalized by hand size."""
+        """Classify finger pose and pinches normalized by hand size."""
         if hand is None or len(hand.keypoints) != 21:
             return GestureResult(GestureState.IDLE, None), GestureDiagnostics()
 
@@ -147,6 +245,10 @@ class GestureEngine:
         finger_mcps = (5, 9, 13, 17)
         finger_pips = (6, 10, 14, 18)
         finger_tips = (8, 12, 16, 20)
+        # Temporarily disabled close gesture; retain this code for reactivation.
+        # all_fingertips = (thumb_tip,) + tuple(
+        #     hand.keypoints[index] for index in finger_tips
+        # )
 
         if min(
             wrist.conf,
@@ -206,6 +308,19 @@ class GestureEngine:
             )
             right_pinch_ratio = middle_distance / hand_size
 
+        open_hand = (
+            thumb_tip.conf >= CONFIDENCE_THRESHOLD
+            and visible_fingers == len(finger_tips)
+            and all(
+                ratio is not None and ratio >= 1.0
+                for ratio in curl_ratios
+            )
+            and left_pinch_ratio is not None
+            and left_pinch_ratio > self.pinch_threshold
+            and right_pinch_ratio is not None
+            and right_pinch_ratio > self.pinch_threshold
+        )
+
         pinch_ratios = []
         if (
             left_pinch_ratio is not None
@@ -222,21 +337,37 @@ class GestureEngine:
                 (GestureState.PINCH_RIGHT_CLICK, right_pinch_ratio)
             )
 
-        if curled_fingers >= 3 and curled_fingers == visible_fingers:
-            gesture = GestureState.FIST_CLOSE_WINDOW
+        # Temporarily disabled close gesture; uncomment to restore it.
+        # fingertips_together = all(
+        #     tip.conf >= CONFIDENCE_THRESHOLD for tip in all_fingertips
+        # ) and max(
+        #     hypot(first.x - second.x, first.y - second.y)
+        #     for first, second in combinations(all_fingertips, 2)
+        # ) / hand_size <= FINGERTIP_CLUSTER_THRESHOLD
+        #
+        # if fingertips_together:
+        #     gesture = GestureState.FIST_CLOSE_WINDOW
+        #     distance_ratio = None
+        # else:
+        if open_hand:
+            gesture = GestureState.IDLE
             distance_ratio = None
         else:
             active_pinches = [
-                item for item in pinch_ratios if item[1] <= self.pinch_threshold
+                item for item in pinch_ratios
+                if item[1] <= self.pinch_threshold
             ]
-            if active_pinches:
-                gesture, distance_ratio = min(
-                    active_pinches,
-                    key=lambda item: item[1],
-                )
-            elif curled_fingers >= 3:
-                gesture = GestureState.FIST_CLOSE_WINDOW
-                distance_ratio = None
+            if len(active_pinches) == 2:
+                active_pinches.sort(key=lambda item: item[1])
+                if active_pinches[1][1] - active_pinches[0][1] < (
+                    PINCH_DOMINANCE_MARGIN
+                ):
+                    gesture = GestureState.IDLE
+                    distance_ratio = active_pinches[0][1]
+                else:
+                    gesture, distance_ratio = active_pinches[0]
+            elif active_pinches:
+                gesture, distance_ratio = active_pinches[0]
             else:
                 gesture = GestureState.IDLE
                 distance_ratio = (
@@ -252,5 +383,8 @@ class GestureEngine:
             curl_ratios=tuple(curl_ratios),
             left_pinch_ratio=left_pinch_ratio,
             right_pinch_ratio=right_pinch_ratio,
+            open_hand=open_hand,
+            wrist_x=wrist.x,
+            hand_size=hand_size,
         )
         return GestureResult(gesture, distance_ratio), diagnostics

@@ -10,7 +10,8 @@ from typing import Literal
 
 from ctypes import wintypes
 
-from ..config import COMMAND_COOLDOWN_SEC
+from ..config import COMMAND_COOLDOWN_SEC, TAB_SWITCH_COOLDOWN_SEC
+# from ..config import SCROLL_AMOUNT  # Scroll action disabled.
 from ..recognition.gesture_engine import GestureState
 
 MouseButton = Literal["left", "right"]
@@ -22,6 +23,18 @@ def _click_mouse(button: MouseButton) -> None:
     import pyautogui
 
     pyautogui.click(button=button)
+
+
+def _scroll_mouse(amount: int) -> None:
+    import pyautogui
+
+    pyautogui.scroll(amount)
+
+
+def _send_hotkey(*keys: str) -> None:
+    import pyautogui
+
+    pyautogui.hotkey(*keys)
 
 
 def _close_current_window() -> None:
@@ -58,17 +71,27 @@ def _request_windows_foreground_close() -> None:
 
 
 class CommandTranslator:
-    """Translate gestures into window or mouse actions and action messages."""
+    """Translate enabled gestures into mouse actions and action messages."""
 
     ACTIONS = {
         GestureState.PINCH_LEFT_CLICK: "LEFT_CLICK",
         GestureState.PINCH_RIGHT_CLICK: "RIGHT_CLICK",
-        GestureState.FIST_CLOSE_WINDOW: "CLOSE_WINDOW",
+        GestureState.NEXT_TAB: "NEXT_TAB",
+        GestureState.PREVIOUS_TAB: "PREVIOUS_TAB",
+        # Scroll gestures disabled; retain mappings for possible reactivation.
+        # GestureState.SCROLL_UP: "SCROLL_UP",
+        # GestureState.SCROLL_DOWN: "SCROLL_DOWN",
+        # Close-window action disabled; uncomment to restore.
+        # GestureState.FIST_CLOSE_WINDOW: "CLOSE_WINDOW",
     }
     BUTTONS: dict[GestureState, MouseButton] = {
         GestureState.PINCH_LEFT_CLICK: "left",
         GestureState.PINCH_RIGHT_CLICK: "right",
     }
+    # SCROLLS: dict[GestureState, int] = {
+    #     GestureState.SCROLL_UP: 1,
+    #     GestureState.SCROLL_DOWN: -1,
+    # }
 
     def __init__(
         self,
@@ -77,6 +100,8 @@ class CommandTranslator:
         emit: Callable[[str], None] = print,
         click: Callable[[MouseButton], None] = _click_mouse,
         close_window: Callable[[], None] = _close_current_window,
+        scroll: Callable[[int], None] = _scroll_mouse,
+        hotkey: Callable[..., None] = _send_hotkey,
     ) -> None:
         if cooldown_sec < 0:
             raise ValueError("cooldown_sec must be non-negative")
@@ -84,12 +109,15 @@ class CommandTranslator:
         self._clock = clock
         self._emit = emit
         self._click = click
+        self._scroll = scroll
         self._close_window = close_window
+        self._hotkey = hotkey
         self._previous_gesture = GestureState.IDLE
         self._last_trigger_at = float("-inf")
+        self._last_tab_switch_at = float("-inf")
 
     def process(self, gesture: GestureState) -> str | None:
-        """Run an action once per gesture transition, subject to the cooldown."""
+        """Dispatch new actions with click and tab-switch cooldowns."""
         is_new_action = (
             gesture in self.ACTIONS and gesture != self._previous_gesture
         )
@@ -100,22 +128,39 @@ class CommandTranslator:
 
         now = self._clock()
         if (
-            gesture != GestureState.FIST_CLOSE_WINDOW
+            gesture in self.BUTTONS
             and now - self._last_trigger_at < self.cooldown_sec
+        ):
+            return None
+        if (
+            gesture in {GestureState.NEXT_TAB, GestureState.PREVIOUS_TAB}
+            and now - self._last_tab_switch_at < TAB_SWITCH_COOLDOWN_SEC
         ):
             return None
 
         action = self.ACTIONS[gesture]
-        if gesture == GestureState.FIST_CLOSE_WINDOW:
-            self._close_window()
+        # Retained for reactivation with the mapping above.
+        # if gesture == GestureState.FIST_CLOSE_WINDOW:
+        #     self._close_window()
+        # else:
+        # Scroll action disabled; retain for possible reactivation.
+        # if gesture in self.SCROLLS:
+        #     self._scroll(self.SCROLLS[gesture] * SCROLL_AMOUNT)
+        if gesture == GestureState.NEXT_TAB:
+            self._hotkey("ctrl", "tab")
+            self._last_tab_switch_at = now
+        elif gesture == GestureState.PREVIOUS_TAB:
+            self._hotkey("ctrl", "shift", "tab")
+            self._last_tab_switch_at = now
         else:
             self._click(self.BUTTONS[gesture])
-        self._last_trigger_at = now
-        status = (
-            "Requested"
-            if gesture == GestureState.FIST_CLOSE_WINDOW
-            else "Executed"
-        )
+            self._last_trigger_at = now
+        # status = (
+        #     "Requested"
+        #     if gesture == GestureState.FIST_CLOSE_WINDOW
+        #     else "Executed"
+        # )
+        status = "Executed"
         message = (
             "[WAVE COMMAND - TRANSLATOR] Gesture detected! -> "
             f"Action: {action} ({status})"

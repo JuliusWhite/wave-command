@@ -50,16 +50,27 @@ index_pinch_ratio = distance(point[4], point[8]) / hand_size
 middle_pinch_ratio = distance(point[4], point[12]) / hand_size
 ```
 
-When an index-tip ratio is at or below `PINCH_THRESHOLD`, the state is `PINCH_LEFT_CLICK`. When a middle-tip ratio is at or below the threshold, the state is `PINCH_RIGHT_CLICK`. If both are below threshold, the smaller ratio wins. The ratio is based on pixel coordinates, and normalizing by hand size reduces sensitivity to how close the hand is to the camera. A missing hand, a low-confidence required landmark, or an invalid/near-zero reference distance produces `IDLE`.
+When an index-tip ratio is at or below `PINCH_THRESHOLD`, the state is `PINCH_LEFT_CLICK`. When a middle-tip ratio is at or below the threshold, the state is `PINCH_RIGHT_CLICK`. If both ratios are within the threshold, the smaller ratio must lead by at least `PINCH_DOMINANCE_MARGIN`; otherwise, the pose is treated as ambiguous and produces `IDLE`. The ratio is based on pixel coordinates, and normalizing by hand size reduces sensitivity to how close the hand is to the camera. A missing hand, a low-confidence required landmark, or an invalid/near-zero reference distance produces `IDLE`.
 
-A fist is maintained when at least three of the four non-thumb fingertips are closer to the middle-finger MCP (the palm reference point) than their PIP joints, with the corresponding landmarks meeting the confidence threshold. To start a fist gesture, all confidently visible fingers must be curled for three consecutive frames; this prevents a partially opened hand from triggering a close. A fully curled fist takes precedence over a pinch, while a pinch can win over a partial curl only when its pinched finger is not curled. After activation, the fist remains active until it is absent for six consecutive frames, then requires three neutral frames before another gesture can trigger. The gesture requests closure of the currently focused window on Windows and sends Alt+F4 on other platforms. The close gesture bypasses the click cooldown, and the webcam loop continues processing after the gesture.
+The close-window gesture and action are temporarily disabled. Their classifier code in `src/recognition/gesture_engine.py` and action mapping/dispatch branch in `src/translation/command_translator.py` are commented out; related tests are skipped so they can be restored later.
 
-The HUD shows the raw classifier state, per-finger curl ratios (index/middle/ring/pinky), and both pinch ratios alongside the filtered gesture state. Its filter status shows fist confirmation, release, or neutral-rearm frame progress. Use these values when tuning gesture rules against real webcam poses.
+## Scrolling (disabled)
+
+The vertical scroll detector and translator action are commented out because the gesture did not work reliably. The previous implementation is retained in `src/recognition/gesture_engine.py` and `src/translation/command_translator.py`; its tests are skipped.
+
+## Browser tab navigation
+
+Tab navigation requires a confidently detected thumb and all four non-thumb fingers extended, with neither thumb pinch active. The engine tracks wrist landmark 0. When it moves horizontally by at least `TAB_SWIPE_DISTANCE_RATIO` (`1.25`) times the average hand size, it emits one tab gesture. Moving from the right side of the camera view to the left emits `PREVIOUS_TAB` (Ctrl+Shift+Tab); moving left-to-right emits `NEXT_TAB` (Ctrl+Tab). The hand must remain open during the swipe; losing the open-hand pose resets the movement anchor. Both directions share a `TAB_SWITCH_COOLDOWN_SEC` (`1.0`) cooldown to suppress repeated or rapidly reversed actions.
+
+The HUD shows the raw classifier state, per-finger curl ratios (index/middle/ring/pinky), and both pinch ratios alongside the gesture state. Use these values when tuning gesture rules against real webcam poses.
 
 Defaults are centralized in `src/config.py`:
 
 - `CONFIDENCE_THRESHOLD = 0.5`
-- `PINCH_THRESHOLD = 0.30`
+- `PINCH_THRESHOLD = 0.45`
+- `PINCH_DOMINANCE_MARGIN = 0.08`
+- `TAB_SWIPE_DISTANCE_RATIO = 1.25`
+- `TAB_SWITCH_COOLDOWN_SEC = 1.0`
 - `COMMAND_COOLDOWN_SEC = 1.5`
 - `CAMERA_ID = 0`
 
@@ -67,6 +78,6 @@ Defaults are centralized in `src/config.py`:
 
 1. Add a state to `GestureState` in `src/recognition/gesture_engine.py`.
 2. Add a geometric rule using the shared 21-point layout. Check confidence and guard against invalid reference distances.
-3. Add a gesture-to-action mapping to `CommandTranslator.ACTIONS` and a mouse-button mapping when the gesture should click.
+3. Add a gesture-to-action mapping to `CommandTranslator.ACTIONS` and the appropriate mouse-button or keyboard-shortcut mapping.
 4. Extend or add unit tests using synthetic `HandPrediction` data.
 5. Update the HUD/documentation when the new gesture needs additional display or configuration.

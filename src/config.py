@@ -10,7 +10,14 @@ CAMERA_ID = 0
 CONFIDENCE_THRESHOLD = 0.5
 
 # Ratio of thumb-to-finger tip distance to wrist-middle-MCP distance.
-PINCH_THRESHOLD = 0.30
+PINCH_THRESHOLD = 0.45
+# Required ratio difference when both pinch targets are within the threshold.
+PINCH_DOMINANCE_MARGIN = 0.08
+# Scroll gesture disabled; retained for possible reactivation.
+# SCROLL_DISTANCE_RATIO = 0.75
+# SCROLL_AMOUNT = 10
+TAB_SWIPE_DISTANCE_RATIO = 1.25
+TAB_SWITCH_COOLDOWN_SEC = 1.0
 COMMAND_COOLDOWN_SEC = 1.5
 HUD_ALERT_DURATION_SEC = 2.5
 WINDOW_NAME = "Wave Command"

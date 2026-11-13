@@ -128,7 +128,7 @@ class Visualizer:
         )
         if diagnostics.fist_active:
             filter_text = (
-                "Filter: fist active, release "
+                "Filter: tips together, release "
                 f"{diagnostics.fist_release_frames}/{FIST_RELEASE_FRAMES}"
             )
         elif diagnostics.fist_rearm_pending:
@@ -138,7 +138,7 @@ class Visualizer:
             )
         elif diagnostics.fist_confirmation_frames:
             filter_text = (
-                "Filter: fist confirm "
+                "Filter: tips together confirm "
                 f"{diagnostics.fist_confirmation_frames}/{FIST_CONFIRM_FRAMES}"
             )
         else:
@@ -162,7 +162,7 @@ class Visualizer:
             ),
             (f"Selected pinch ratio: {distance_text}", self._TEXT_COLOR),
             (
-                "Pinch: click | Fist: close window | Q: quit",
+                "Open-hand swipe: next/previous tab | Pinch: click | Q: quit",
                 self._TEXT_COLOR,
             ),
         )
