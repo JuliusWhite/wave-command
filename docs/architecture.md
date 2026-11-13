@@ -2,9 +2,9 @@
 
 ## Goals and safety boundary
 
-Wave Command separates hand recognition, gesture interpretation, action mapping, and webcam visualization. Thumb-to-index and thumb-to-middle pinches trigger left and right clicks. Open-hand wrist swipes to the left select the previous browser tab; swipes to the right select the next tab. Scrolling and close-window gestures are temporarily disabled. Cursor movement is not implemented.
+Wave Command separates hand recognition, gesture interpretation, action mapping, and webcam visualization. Thumb-to-index and thumb-to-middle pinches trigger left and right clicks. Open-hand wrist swipes select previous/next browser tabs; two-finger wrist swipes navigate back/forward in browser history. Scrolling and close-window gestures are temporarily disabled. Cursor movement is not implemented.
 
-The action mappings are `PINCH_LEFT_CLICK` → `LEFT_CLICK`, `PINCH_RIGHT_CLICK` → `RIGHT_CLICK`, `NEXT_TAB` → Ctrl+Tab, and `PREVIOUS_TAB` → Ctrl+Shift+Tab. Browser interactions are the first-iteration focus; the project direction remains broader computer interaction.
+The action mappings are `PINCH_LEFT_CLICK` → `LEFT_CLICK`, `PINCH_RIGHT_CLICK` → `RIGHT_CLICK`, `NEXT_TAB` → Ctrl+Tab, `PREVIOUS_TAB` → Ctrl+Shift+Tab, `BACK` → Alt+Left, and `FORWARD` → Alt+Right. Browser interactions are the first-iteration focus; the project direction remains broader computer interaction.
 
 ## Modules
 
@@ -19,7 +19,7 @@ The action mappings are `PINCH_LEFT_CLICK` → `LEFT_CLICK`, `PINCH_RIGHT_CLICK`
 
 ### Translation service
 
-`src/translation/command_translator.py` maps pinch states to mouse buttons and swipe states to browser tab shortcuts. It acts only on a transition into a gesture, so holding a pose does not repeatedly trigger an action. Pinch clicks are suppressed until `COMMAND_COOLDOWN_SEC` (1.5 seconds) has elapsed; all tab switches share a 1-second cooldown. Runtime input uses PyAutoGUI.
+`src/translation/command_translator.py` maps pinch states to mouse buttons and swipe states to browser tab/history shortcuts. It acts only on a transition into a gesture, so holding a pose does not repeatedly trigger an action. Pinch clicks are suppressed until `COMMAND_COOLDOWN_SEC` (1.5 seconds) has elapsed; all tab and history navigation actions share a 1-second cooldown, and other gestures are suppressed during that interval after a tab switch. Runtime input uses PyAutoGUI.
 
 ### Webcam and visualization service
 

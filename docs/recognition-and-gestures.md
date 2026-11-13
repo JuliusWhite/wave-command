@@ -62,6 +62,10 @@ The vertical scroll detector and translator action are commented out because the
 
 Tab navigation requires a confidently detected thumb and all four non-thumb fingers extended, with neither thumb pinch active. The engine tracks wrist landmark 0. When it moves horizontally by at least `TAB_SWIPE_DISTANCE_RATIO` (`1.25`) times the average hand size, it emits one tab gesture. Moving from the right side of the camera view to the left emits `PREVIOUS_TAB` (Ctrl+Shift+Tab); moving left-to-right emits `NEXT_TAB` (Ctrl+Tab). The hand must remain open during the swipe; losing the open-hand pose resets the movement anchor. Both directions share a `TAB_SWITCH_COOLDOWN_SEC` (`1.0`) cooldown to suppress repeated or rapidly reversed actions.
 
+## Browser history navigation
+
+History navigation uses the same wrist landmark, swipe-distance ratio, and shared navigation cooldown as tab swipes. The pose requires all four non-thumb fingers to be visible, with index and middle extended (PIP joint angle at least 150 degrees) and ring and pinky curled (at most 130 degrees); thumb pose does not matter. Once this pose is recognized, pinch actions are suppressed until the swipe completes or the pose is lost. Swiping right-to-left emits `BACK` (Alt+Left); swiping left-to-right emits `FORWARD` (Alt+Right). Losing the two-finger pose resets its movement anchor. The HUD shows whether this pose is currently detected.
+
 The HUD shows the raw classifier state, per-finger curl ratios (index/middle/ring/pinky), and both pinch ratios alongside the gesture state. Use these values when tuning gesture rules against real webcam poses.
 
 Defaults are centralized in `src/config.py`:
@@ -70,7 +74,7 @@ Defaults are centralized in `src/config.py`:
 - `PINCH_THRESHOLD = 0.45`
 - `PINCH_DOMINANCE_MARGIN = 0.08`
 - `TAB_SWIPE_DISTANCE_RATIO = 1.25`
-- `TAB_SWITCH_COOLDOWN_SEC = 1.0`
+- `TAB_SWITCH_COOLDOWN_SEC = 1.0` (shared by tab and history navigation)
 - `COMMAND_COOLDOWN_SEC = 1.5`
 - `CAMERA_ID = 0`
 

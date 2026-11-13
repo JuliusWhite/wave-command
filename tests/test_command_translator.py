@@ -152,6 +152,59 @@ class CommandTranslatorTests(unittest.TestCase):
             [("ctrl", "tab"), ("ctrl", "shift", "tab")],
         )
 
+    def test_history_swipes_send_alt_arrows_and_share_navigation_cooldown(
+        self,
+    ) -> None:
+        hotkeys: list[tuple[str, ...]] = []
+        current_time = [10.0]
+        translator = CommandTranslator(
+            cooldown_sec=0,
+            clock=lambda: current_time[0],
+            hotkey=lambda *keys: hotkeys.append(keys),
+        )
+
+        translator.process(GestureState.NEXT_TAB)
+        translator.process(GestureState.IDLE)
+        current_time[0] = 10.5
+        translator.process(GestureState.BACK)
+        translator.process(GestureState.IDLE)
+        current_time[0] = 11.0
+        translator.process(GestureState.BACK)
+        translator.process(GestureState.IDLE)
+        current_time[0] = 12.0
+        translator.process(GestureState.FORWARD)
+
+        self.assertEqual(
+            hotkeys,
+            [("ctrl", "tab"), ("alt", "left"), ("alt", "right")],
+        )
+
+    def test_tab_switch_cooldown_suppresses_a_following_pinch(self) -> None:
+        hotkeys: list[tuple[str, ...]] = []
+        buttons: list[str] = []
+        current_time = [10.0]
+        translator = CommandTranslator(
+            cooldown_sec=0,
+            clock=lambda: current_time[0],
+            click=buttons.append,
+            hotkey=lambda *keys: hotkeys.append(keys),
+        )
+
+        translator.process(GestureState.NEXT_TAB)
+        translator.process(GestureState.IDLE)
+        current_time[0] = 10.5
+        self.assertIsNone(
+            translator.process(GestureState.PINCH_LEFT_CLICK)
+        )
+        translator.process(GestureState.IDLE)
+        current_time[0] = 11.0
+        self.assertIsNotNone(
+            translator.process(GestureState.PINCH_LEFT_CLICK)
+        )
+
+        self.assertEqual(hotkeys, [("ctrl", "tab")])
+        self.assertEqual(buttons, ["left"])
+
     def test_scroll_action_is_disabled(self) -> None:
         scrolls: list[int] = []
         translator = CommandTranslator(scroll=scrolls.append)

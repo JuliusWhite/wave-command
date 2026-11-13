@@ -156,13 +156,19 @@ class Visualizer:
                 self._TEXT_COLOR,
             ),
             (
+                "Two-finger history pose: "
+                f"{'detected' if diagnostics.two_finger_hand else 'not detected'}",
+                self._TEXT_COLOR,
+            ),
+            (
                 f"Pinch L/R: {left_pinch_text}/{right_pinch_text} "
                 f"(threshold {PINCH_THRESHOLD:.2f})",
                 self._TEXT_COLOR,
             ),
             (f"Selected pinch ratio: {distance_text}", self._TEXT_COLOR),
             (
-                "Open-hand swipe: next/previous tab | Pinch: click | Q: quit",
+                "Open-hand swipe: tabs | Two-finger swipe: history | "
+                "Pinch: click | Q: quit",
                 self._TEXT_COLOR,
             ),
         )

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from enum import Enum
 # from itertools import combinations
-from math import hypot
+from math import acos, degrees, hypot
 
 from ..config import (
     CONFIDENCE_THRESHOLD,
@@ -18,6 +18,8 @@ from .hand_detector import HandPrediction
 FIST_CONFIRM_FRAMES = 3
 FIST_RELEASE_FRAMES = 6
 FIST_REARM_FRAMES = 3
+FINGER_EXTENDED_ANGLE_DEGREES = 150.0
+FINGER_CURLED_ANGLE_DEGREES = 130.0
 # FINGERTIP_CLUSTER_THRESHOLD = 0.15
 
 
@@ -30,6 +32,8 @@ class GestureState(str, Enum):
     FIST_CLOSE_WINDOW = "FIST_CLOSE_WINDOW"
     NEXT_TAB = "NEXT_TAB"
     PREVIOUS_TAB = "PREVIOUS_TAB"
+    BACK = "BACK"
+    FORWARD = "FORWARD"
 
 
 @dataclass(frozen=True)
@@ -46,6 +50,7 @@ class GestureDiagnostics:
     fist_active: bool = False
     fist_rearm_pending: bool = False
     open_hand: bool = False
+    two_finger_hand: bool = False
     wrist_x: float | None = None
     # wrist_y: float | None = None  # Retained for the disabled scroll gesture.
     hand_size: float | None = None
@@ -72,6 +77,8 @@ class GestureEngine:
         # self._scroll_origin_size: float | None = None
         self._tab_swipe_origin_x: float | None = None
         self._tab_swipe_origin_size: float | None = None
+        self._history_swipe_origin_x: float | None = None
+        self._history_swipe_origin_size: float | None = None
         self._diagnostics = GestureDiagnostics()
 
     @property
@@ -87,7 +94,7 @@ class GestureEngine:
         )
 
     def evaluate(self, hand: HandPrediction | None) -> GestureResult:
-        """Classify pinches and horizontal open-hand tab swipes."""
+        """Classify pinches, tab swipes, and two-finger history swipes."""
         result, diagnostics = self._classify(hand)
 
         # Scrolling disabled; retain its detector for possible reactivation.
@@ -115,6 +122,8 @@ class GestureEngine:
             and diagnostics.wrist_x is not None
             and diagnostics.hand_size is not None
         ):
+            self._history_swipe_origin_x = None
+            self._history_swipe_origin_size = None
             tab_gesture = self._tab_from_open_hand(
                 diagnostics.wrist_x,
                 diagnostics.hand_size,
@@ -125,9 +134,33 @@ class GestureEngine:
                     diagnostics,
                     raw_gesture=tab_gesture,
                 )
+        elif (
+            diagnostics.two_finger_hand
+            and diagnostics.wrist_x is not None
+            and diagnostics.hand_size is not None
+        ):
+            result = GestureResult(GestureState.IDLE, None)
+            diagnostics = replace(
+                diagnostics,
+                raw_gesture=GestureState.IDLE,
+            )
+            self._tab_swipe_origin_x = None
+            self._tab_swipe_origin_size = None
+            history_gesture = self._history_from_two_finger_hand(
+                diagnostics.wrist_x,
+                diagnostics.hand_size,
+            )
+            if history_gesture is not None:
+                result = GestureResult(history_gesture, None)
+                diagnostics = replace(
+                    diagnostics,
+                    raw_gesture=history_gesture,
+                )
         else:
             self._tab_swipe_origin_x = None
             self._tab_swipe_origin_size = None
+            self._history_swipe_origin_x = None
+            self._history_swipe_origin_size = None
 
         self._diagnostics = diagnostics
 
@@ -229,6 +262,34 @@ class GestureEngine:
             else GestureState.NEXT_TAB
         )
 
+    def _history_from_two_finger_hand(
+        self,
+        wrist_x: float,
+        hand_size: float,
+    ) -> GestureState | None:
+        if (
+            self._history_swipe_origin_x is None
+            or self._history_swipe_origin_size is None
+        ):
+            self._history_swipe_origin_x = wrist_x
+            self._history_swipe_origin_size = hand_size
+            return None
+
+        reference_size = (self._history_swipe_origin_size + hand_size) / 2
+        displacement_ratio = (self._history_swipe_origin_x - wrist_x) / (
+            reference_size
+        )
+        if abs(displacement_ratio) < TAB_SWIPE_DISTANCE_RATIO:
+            return None
+
+        self._history_swipe_origin_x = None
+        self._history_swipe_origin_size = None
+        return (
+            GestureState.BACK
+            if displacement_ratio > 0
+            else GestureState.FORWARD
+        )
+
     def _classify(
         self,
         hand: HandPrediction | None,
@@ -264,6 +325,7 @@ class GestureEngine:
         visible_fingers = 0
         curled_by_tip: dict[int, bool] = {}
         curl_ratios: list[float | None] = [None, None, None, None]
+        finger_angles: list[float | None] = [None, None, None, None]
         for finger_index, mcp_index, pip_index, tip_index in zip(
             range(4), finger_mcps, finger_pips, finger_tips
         ):
@@ -281,6 +343,15 @@ class GestureEngine:
                 else None
             )
             curl_ratios[finger_index] = curl_ratio
+            tip_segment_length = hypot(tip.x - pip.x, tip.y - pip.y)
+            if pip_distance > 1e-6 and tip_segment_length > 1e-6:
+                cosine = (
+                    (mcp.x - pip.x) * (tip.x - pip.x)
+                    + (mcp.y - pip.y) * (tip.y - pip.y)
+                ) / (pip_distance * tip_segment_length)
+                finger_angles[finger_index] = degrees(
+                    acos(max(-1.0, min(1.0, cosine)))
+                )
             is_curled = curl_ratio is not None and curl_ratio < 1.0
             curled_by_tip[tip_index] = is_curled
             if is_curled:
@@ -312,13 +383,25 @@ class GestureEngine:
             thumb_tip.conf >= CONFIDENCE_THRESHOLD
             and visible_fingers == len(finger_tips)
             and all(
-                ratio is not None and ratio >= 1.0
-                for ratio in curl_ratios
+                angle is not None
+                and angle >= FINGER_EXTENDED_ANGLE_DEGREES
+                for angle in finger_angles
             )
             and left_pinch_ratio is not None
             and left_pinch_ratio > self.pinch_threshold
             and right_pinch_ratio is not None
             and right_pinch_ratio > self.pinch_threshold
+        )
+        two_finger_hand = (
+            visible_fingers == len(finger_tips)
+            and finger_angles[0] is not None
+            and finger_angles[0] >= FINGER_EXTENDED_ANGLE_DEGREES
+            and finger_angles[1] is not None
+            and finger_angles[1] >= FINGER_EXTENDED_ANGLE_DEGREES
+            and finger_angles[2] is not None
+            and finger_angles[2] <= FINGER_CURLED_ANGLE_DEGREES
+            and finger_angles[3] is not None
+            and finger_angles[3] <= FINGER_CURLED_ANGLE_DEGREES
         )
 
         pinch_ratios = []
@@ -384,6 +467,7 @@ class GestureEngine:
             left_pinch_ratio=left_pinch_ratio,
             right_pinch_ratio=right_pinch_ratio,
             open_hand=open_hand,
+            two_finger_hand=two_finger_hand,
             wrist_x=wrist.x,
             hand_size=hand_size,
         )

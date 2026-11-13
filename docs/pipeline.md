@@ -39,8 +39,8 @@ python main.py
    - Otherwise, the detector selects MediaPipe Hands.
    - If YOLO inference returns a pose shape other than 21 keypoints, the detector switches to MediaPipe.
 3. **Evaluate:** `main.py` gives the first detected hand (or `None`) to `GestureEngine.evaluate()`.
-4. **Recognize:** The engine checks landmark confidence, calculates pinch and finger-curl ratios, classifies a left/right pinch or idle hand, and detects horizontal wrist movement with an open hand as a tab-switch gesture. Similar simultaneous pinch ratios are ignored as ambiguous.
-5. **Translate:** `CommandTranslator.process()` dispatches left/right mouse clicks on new pinch transitions, subject to the 1.5-second cooldown, and Ctrl+Tab or Ctrl+Shift+Tab for the corresponding open-hand swipe, subject to a shared 1-second tab-switch cooldown. Input is issued by PyAutoGUI; errors are allowed to surface rather than being reported as success.
+4. **Recognize:** The engine checks landmark confidence, calculates pinch and finger-curl ratios, classifies a left/right pinch or idle hand, and detects horizontal wrist movement with an open hand for tab switching or with index and middle fingers extended for history navigation. Similar simultaneous pinch ratios are ignored as ambiguous.
+5. **Translate:** `CommandTranslator.process()` dispatches left/right mouse clicks on new pinch transitions, subject to the 1.5-second cooldown, and Ctrl+Tab/Ctrl+Shift+Tab for open-hand swipes or Alt+Left/Alt+Right for two-finger swipes. All navigation shortcuts share a 1-second cooldown. Input is issued by PyAutoGUI; errors are allowed to surface rather than being reported as success.
 6. **Visualize:** The callback returns a `FrameState`. The visualizer draws all detected hands, bones, pinch-tip line, state, gesture diagnostics, FPS, and a temporary alert in the camera window.
 7. **Exit:** Press **Q** while the video window is focused. Camera/window resources are released in `finally` blocks.
 
@@ -49,7 +49,7 @@ Camera frame
   -> HandDetector
   -> 21 keypoints per hand
   -> GestureEngine
-  -> IDLE, PINCH_LEFT_CLICK, PINCH_RIGHT_CLICK, NEXT_TAB, or PREVIOUS_TAB
+  -> IDLE, PINCH_LEFT_CLICK, PINCH_RIGHT_CLICK, NEXT_TAB, PREVIOUS_TAB, BACK, or FORWARD
   -> CommandTranslator
   -> OS mouse clicks/tab shortcuts and action alert
   -> Visualizer HUD
@@ -59,7 +59,7 @@ Camera frame
 
 - Terminal: a message identifying the executed click or tab action.
 - Video window: hand skeleton, colored finger bones, pinch state, ratio, FPS, and alert.
-- Keyboard: open-hand swipes send Ctrl+Tab or Ctrl+Shift+Tab to navigate tabs; **Q** exits the visualizer when its window is focused.
+- Keyboard: open-hand swipes send Ctrl+Tab or Ctrl+Shift+Tab to navigate tabs; two-finger swipes send Alt+Left or Alt+Right to navigate history; **Q** exits the visualizer when its window is focused.
 - Mouse: pinches click at the current cursor position; cursor movement is not implemented.
 
 ## Model files

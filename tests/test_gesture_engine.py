@@ -53,6 +53,47 @@ def make_open_hand(wrist_y: float, wrist_x: float = 100.0) -> HandPrediction:
     return HandPrediction(tuple(points), 1.0)
 
 
+def make_two_finger_hand(
+    wrist_y: float,
+    wrist_x: float = 100.0,
+) -> HandPrediction:
+    hand = make_open_hand(wrist_y, wrist_x)
+    points = list(hand.keypoints)
+    for mcp_index, tip_index in ((13, 16), (17, 20)):
+        mcp = points[mcp_index]
+        points[tip_index] = Keypoint(
+            tip_index, mcp.x, mcp.y - 10.0, 1.0, 0.5, 0.5
+        )
+    return HandPrediction(tuple(points), hand.confidence)
+
+
+def make_two_finger_hand_with_right_pinch(
+    wrist_y: float,
+    wrist_x: float = 100.0,
+) -> HandPrediction:
+    hand = make_two_finger_hand(wrist_y, wrist_x)
+    points = list(hand.keypoints)
+    middle_tip = points[12]
+    points[4] = Keypoint(
+        4, middle_tip.x + 30.0, middle_tip.y, 1.0, 0.5, 0.5
+    )
+    return HandPrediction(tuple(points), hand.confidence)
+
+
+def make_bent_two_finger_hand(
+    wrist_y: float,
+    wrist_x: float = 100.0,
+) -> HandPrediction:
+    hand = make_two_finger_hand(wrist_y, wrist_x)
+    points = list(hand.keypoints)
+    for pip_index, tip_index in ((14, 16), (18, 20)):
+        pip = points[pip_index]
+        points[tip_index] = Keypoint(
+            tip_index, pip.x + 40.0, pip.y, 1.0, 0.5, 0.5
+        )
+    return HandPrediction(tuple(points), hand.confidence)
+
+
 def move_wrist(
     hand: HandPrediction,
     wrist_y: float | None = None,
@@ -281,6 +322,72 @@ class GestureEngineTests(unittest.TestCase):
         result = engine.evaluate(make_open_hand(300.0, wrist_x=200.0))
 
         self.assertEqual(result.gesture, GestureState.NEXT_TAB)
+
+    def test_two_finger_swipe_right_to_left_goes_back(self) -> None:
+        engine = GestureEngine()
+
+        engine.evaluate(make_two_finger_hand(300.0, wrist_x=200.0))
+        result = engine.evaluate(
+            make_two_finger_hand(300.0, wrist_x=0.0)
+        )
+
+        self.assertEqual(result.gesture, GestureState.BACK)
+
+    def test_two_finger_swipe_left_to_right_goes_forward(self) -> None:
+        engine = GestureEngine()
+
+        engine.evaluate(make_two_finger_hand(300.0, wrist_x=0.0))
+        result = engine.evaluate(
+            make_two_finger_hand(300.0, wrist_x=200.0)
+        )
+
+        self.assertEqual(result.gesture, GestureState.FORWARD)
+
+    def test_two_finger_swipe_does_not_require_thumb_visibility(self) -> None:
+        engine = GestureEngine()
+        start = make_two_finger_hand(300.0, wrist_x=200.0)
+        start_points = list(start.keypoints)
+        thumb = start_points[4]
+        start_points[4] = Keypoint(
+            4, thumb.x, thumb.y, 0.1, thumb.normalized_x, thumb.normalized_y
+        )
+        end = make_two_finger_hand(300.0, wrist_x=0.0)
+        end_points = list(end.keypoints)
+        thumb = end_points[4]
+        end_points[4] = Keypoint(
+            4, thumb.x, thumb.y, 0.1, thumb.normalized_x, thumb.normalized_y
+        )
+
+        engine.evaluate(HandPrediction(tuple(start_points), start.confidence))
+        result = engine.evaluate(HandPrediction(tuple(end_points), end.confidence))
+
+        self.assertEqual(result.gesture, GestureState.BACK)
+
+    def test_two_finger_pose_suppresses_right_pinch_until_swipe(self) -> None:
+        engine = GestureEngine()
+        start = make_two_finger_hand_with_right_pinch(
+            300.0,
+            wrist_x=200.0,
+        )
+        end = make_two_finger_hand_with_right_pinch(
+            300.0,
+            wrist_x=0.0,
+        )
+
+        self.assertEqual(engine.evaluate(start).gesture, GestureState.IDLE)
+        self.assertEqual(engine.evaluate(end).gesture, GestureState.BACK)
+
+    def test_bent_ring_and_pinky_are_down_even_when_their_tips_are_far_from_mcp(
+        self,
+    ) -> None:
+        engine = GestureEngine()
+
+        engine.evaluate(make_bent_two_finger_hand(300.0, wrist_x=200.0))
+        result = engine.evaluate(
+            make_bent_two_finger_hand(300.0, wrist_x=0.0)
+        )
+
+        self.assertEqual(result.gesture, GestureState.BACK)
 
     def test_tab_swipe_requires_enough_horizontal_wrist_movement(self) -> None:
         engine = GestureEngine()

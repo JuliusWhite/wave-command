@@ -78,6 +78,8 @@ class CommandTranslator:
         GestureState.PINCH_RIGHT_CLICK: "RIGHT_CLICK",
         GestureState.NEXT_TAB: "NEXT_TAB",
         GestureState.PREVIOUS_TAB: "PREVIOUS_TAB",
+        GestureState.BACK: "BACK",
+        GestureState.FORWARD: "FORWARD",
         # Scroll gestures disabled; retain mappings for possible reactivation.
         # GestureState.SCROLL_UP: "SCROLL_UP",
         # GestureState.SCROLL_DOWN: "SCROLL_DOWN",
@@ -114,10 +116,11 @@ class CommandTranslator:
         self._hotkey = hotkey
         self._previous_gesture = GestureState.IDLE
         self._last_trigger_at = float("-inf")
+        self._last_navigation_at = float("-inf")
         self._last_tab_switch_at = float("-inf")
 
     def process(self, gesture: GestureState) -> str | None:
-        """Dispatch new actions with click and tab-switch cooldowns."""
+        """Dispatch new actions with click and navigation cooldowns."""
         is_new_action = (
             gesture in self.ACTIONS and gesture != self._previous_gesture
         )
@@ -127,14 +130,21 @@ class CommandTranslator:
             return None
 
         now = self._clock()
+        if now - self._last_tab_switch_at < TAB_SWITCH_COOLDOWN_SEC:
+            return None
         if (
             gesture in self.BUTTONS
             and now - self._last_trigger_at < self.cooldown_sec
         ):
             return None
         if (
-            gesture in {GestureState.NEXT_TAB, GestureState.PREVIOUS_TAB}
-            and now - self._last_tab_switch_at < TAB_SWITCH_COOLDOWN_SEC
+            gesture in {
+                GestureState.NEXT_TAB,
+                GestureState.PREVIOUS_TAB,
+                GestureState.BACK,
+                GestureState.FORWARD,
+            }
+            and now - self._last_navigation_at < TAB_SWITCH_COOLDOWN_SEC
         ):
             return None
 
@@ -148,10 +158,18 @@ class CommandTranslator:
         #     self._scroll(self.SCROLLS[gesture] * SCROLL_AMOUNT)
         if gesture == GestureState.NEXT_TAB:
             self._hotkey("ctrl", "tab")
+            self._last_navigation_at = now
             self._last_tab_switch_at = now
         elif gesture == GestureState.PREVIOUS_TAB:
             self._hotkey("ctrl", "shift", "tab")
+            self._last_navigation_at = now
             self._last_tab_switch_at = now
+        elif gesture == GestureState.BACK:
+            self._hotkey("alt", "left")
+            self._last_navigation_at = now
+        elif gesture == GestureState.FORWARD:
+            self._hotkey("alt", "right")
+            self._last_navigation_at = now
         else:
             self._click(self.BUTTONS[gesture])
             self._last_trigger_at = now
