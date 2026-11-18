@@ -4,9 +4,24 @@ Wave Command is a hands-free computer interaction project. It uses a webcam to r
 
 ## First iteration
 
-This iteration focuses on a small set of common actions, prioritizing web-browser use. A thumb-to-index pinch triggers a left-click, and a thumb-to-middle-finger pinch triggers a right-click. With an open hand, swiping from the right side of the camera view to the left selects the previous browser tab; swiping left-to-right selects the next tab. Pinch clicks have a 1.5-second cooldown, and tab switches have a 1-second cooldown. Actions are printed to the terminal and shown on the video HUD. Scrolling and close-window gestures are temporarily disabled.
+This iteration focuses on a small set of common actions, prioritizing web-browser use. Each action has its own hand pose, so the gestures do not trigger each other:
 
-Cursor movement is not included in this iteration, so position the cursor manually over content before clicking. A horizontal wrist swipe must move at least `1.25` hand sizes to switch tabs. The pinch threshold is `0.45` times the wrist-to-middle-MCP hand size, allowing clicks before the fingertips touch. If both pinch ratios are within the threshold but differ by less than `0.08`, the pose is treated as ambiguous and does not click. These boundaries do not limit the broader project direction.
+| Pose | Movement | Action |
+|---|---|---|
+| Upright open palm facing the camera | Move up or down | Scroll (hand up scrolls down, hand down scrolls up) |
+| Index and middle fingers extended, ring and pinky curled | Swipe sideways | Switch browser tab (Ctrl+Tab / Ctrl+Shift+Tab) |
+| Only the index finger extended | Swipe sideways | Browser back / forward (Alt+Left / Alt+Right) |
+| Thumb tip to index tip | Pinch | Left-click |
+| Thumb tip to middle tip | Pinch | Right-click |
+
+Swipe directions are measured in the (unmirrored) camera image: right-to-left means previous tab or back, and left-to-right means next tab or forward.
+
+- **Pinches** must be armed by showing an upright open palm first, and each pinch uses up the arming. The pinch threshold is `0.45` times the wrist-to-middle-MCP hand size, so clicks register before the fingertips touch. If both pinch ratios are within the threshold but differ by less than `0.08`, the pose is ambiguous and does not click.
+- **Scrolling** starts after about `0.15` hand sizes of vertical movement. It disarms pinches: release the open palm and present it again before pinching.
+- **Tab switching** fires once per two-finger pose; release the pose before the next switch, so the return stroke does not switch back.
+- **Cooldowns:** clicks 1.5 s; tab and history navigation 1 s. After a tab switch, clicks and history are also paused for 1 s.
+
+Actions are printed to the terminal and shown on the video HUD. Cursor movement is not included in this iteration, so position the cursor manually over content before clicking or scrolling. The close-window gesture is temporarily disabled. These boundaries do not limit the broader project direction.
 
 ## Requirements
 
@@ -14,7 +29,7 @@ Cursor movement is not included in this iteration, so position the cursor manual
 - A webcam
 - Windows, macOS, or Linux
 
-MediaPipe provides the default 21-landmark hand detector, so the webcam flow works without downloading custom model weights. If a compatible 21-keypoint YOLO hand-pose model is available, place it at `models/hand-pose.pt`; the detector will use it instead. Standard COCO pose models have 17 body keypoints and are not compatible.
+MediaPipe provides the default 21-landmark hand detector, so the webcam flow works without downloading custom model weights. If a compatible 21-keypoint YOLO hand-pose model is available, install the optional dependencies with `python -m pip install -r requirements-yolo.txt` (this pulls in Ultralytics and PyTorch) and place the weights at `models/hand-pose.pt`; the detector will use it instead. Standard COCO pose models have 17 body keypoints and are not compatible.
 
 ## Setup
 
@@ -43,7 +58,7 @@ python scripts/setup_models.py
 python main.py
 ```
 
-Allow webcam access if prompted. The live view displays hand landmarks, skeletal connections, gesture and pinch diagnostics, FPS, and action alerts. Press **Q** while the video window is focused to quit.
+Allow webcam access if prompted. The live view displays hand landmarks, skeletal connections, the current and raw gesture, whether pinches are armed, whether the index-only and two-finger poses are detected, finger-curl and pinch ratios, FPS, and action alerts. Press **Q** while the video window is focused to quit.
 
 ## Project layout
 
@@ -51,7 +66,9 @@ Allow webcam access if prompted. The live view displays hand landmarks, skeletal
 - `src/translation/` — gesture-to-mouse-action mapping.
 - `src/webcam/` — camera capture and visualization.
 - `scripts/setup_models.py` — backend and optional weights verification.
-- `docs/architecture.md` — architecture, data flow, and landmark reference.
+- `requirements.txt` / `requirements-yolo.txt` — base dependencies / optional YOLO backend.
+- `tests/` — unit tests; no webcam or real input needed.
+- `docs/` — full documentation, starting at [docs/README.md](docs/README.md).
 
 Run the unit tests with:
 

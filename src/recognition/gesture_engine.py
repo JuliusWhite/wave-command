@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from enum import Enum
 # from itertools import combinations
@@ -11,6 +13,12 @@ from ..config import (
     CONFIDENCE_THRESHOLD,
     PINCH_DOMINANCE_MARGIN,
     PINCH_THRESHOLD,
+    SCROLL_DEAD_ZONE_RATIO_PER_SEC,
+    SCROLL_MAX_HAND_SIZES_PER_SEC,
+    SCROLL_SMOOTHING_ALPHA,
+    SCROLL_START_DISTANCE_RATIO,
+    SCROLL_UNITS_PER_HAND_SIZE_PER_SEC,
+    HISTORY_SWIPE_DISTANCE_RATIO,
     TAB_SWIPE_DISTANCE_RATIO,
 )
 from .hand_detector import HandPrediction
@@ -20,6 +28,8 @@ FIST_RELEASE_FRAMES = 6
 FIST_REARM_FRAMES = 3
 FINGER_EXTENDED_ANGLE_DEGREES = 150.0
 FINGER_CURLED_ANGLE_DEGREES = 130.0
+OPEN_HAND_VERTICAL_ALIGNMENT_RATIO = 0.4
+OPEN_HAND_PALM_WIDTH_RATIO = 0.55
 # FINGERTIP_CLUSTER_THRESHOLD = 0.15
 
 
@@ -50,9 +60,11 @@ class GestureDiagnostics:
     fist_active: bool = False
     fist_rearm_pending: bool = False
     open_hand: bool = False
+    pinch_enabled: bool = False
+    index_only_hand: bool = False
     two_finger_hand: bool = False
     wrist_x: float | None = None
-    # wrist_y: float | None = None  # Retained for the disabled scroll gesture.
+    wrist_y: float | None = None
     hand_size: float | None = None
 
 
@@ -60,25 +72,42 @@ class GestureDiagnostics:
 class GestureResult:
     gesture: GestureState
     pinch_distance_ratio: float | None
+    scroll_amount: int = 0
 
 
 class GestureEngine:
     """Evaluate geometric rules independently from model inference."""
 
-    def __init__(self, pinch_threshold: float = PINCH_THRESHOLD) -> None:
+    def __init__(
+        self,
+        pinch_threshold: float = PINCH_THRESHOLD,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
         self.pinch_threshold = pinch_threshold
+        self._clock = clock
         self._stable_gesture = GestureState.IDLE
         self._fist_active = False
         self._fist_candidate_frames = 0
         self._fist_release_frames = 0
         self._fist_rearm_pending = False
         self._fist_rearm_frames = 0
-        # self._scroll_origin_y: float | None = None
-        # self._scroll_origin_size: float | None = None
-        self._tab_swipe_origin_x: float | None = None
-        self._tab_swipe_origin_size: float | None = None
+        self._pinch_enabled = False
+        self._pinch_waiting_for_open_hand_release = False
+        self._scroll_last_x: float | None = None
+        self._scroll_last_y: float | None = None
+        self._scroll_last_size: float | None = None
+        self._scroll_last_time: float | None = None
+        self._scroll_origin_x: float | None = None
+        self._scroll_origin_y: float | None = None
+        self._scroll_origin_size: float | None = None
+        self._scroll_started = False
+        self._scroll_velocity = 0.0
+        self._scroll_remainder = 0.0
         self._history_swipe_origin_x: float | None = None
         self._history_swipe_origin_size: float | None = None
+        self._tab_swipe_origin_x: float | None = None
+        self._tab_swipe_origin_size: float | None = None
+        self._tab_swipe_waiting_for_release = False
         self._diagnostics = GestureDiagnostics()
 
     @property
@@ -94,45 +123,63 @@ class GestureEngine:
         )
 
     def evaluate(self, hand: HandPrediction | None) -> GestureResult:
-        """Classify pinches, tab swipes, and two-finger history swipes."""
-        result, diagnostics = self._classify(hand)
+        """Classify pinches, open-palm scrolling, and two swipe gestures.
 
-        # Scrolling disabled; retain its detector for possible reactivation.
-        # if (
-        #     diagnostics.open_hand
-        #     and diagnostics.wrist_y is not None
-        #     and diagnostics.hand_size is not None
-        # ):
-        #     scroll_gesture = self._scroll_from_open_hand(
-        #         diagnostics.wrist_y,
-        #         diagnostics.hand_size,
-        #     )
-        #     if scroll_gesture is not None:
-        #         result = GestureResult(scroll_gesture, None)
-        #         diagnostics = replace(
-        #             diagnostics,
-        #             raw_gesture=scroll_gesture,
-        #         )
-        # else:
-        #     self._scroll_origin_y = None
-        #     self._scroll_origin_size = None
+        Each pose owns one action: the open palm scrolls, an index-only hand
+        navigates history, and an index-and-middle hand switches tabs.
+        """
+        result, diagnostics = self._classify(hand)
+        scroll_amount = 0
 
         if (
             diagnostics.open_hand
             and diagnostics.wrist_x is not None
+            and diagnostics.wrist_y is not None
             and diagnostics.hand_size is not None
         ):
-            self._history_swipe_origin_x = None
-            self._history_swipe_origin_size = None
-            tab_gesture = self._tab_from_open_hand(
+            self._reset_history_swipe()
+            self._reset_tab_swipe()
+            scroll_amount = self._scroll_from_open_hand(
+                diagnostics.wrist_x,
+                diagnostics.wrist_y,
+                diagnostics.hand_size,
+            )
+            if scroll_amount:
+                # Scrolling consumes the pinch activation; the open palm must
+                # be released and shown again before the next pinch.
+                self._pinch_enabled = False
+                self._pinch_waiting_for_open_hand_release = True
+                scroll_gesture = (
+                    GestureState.SCROLL_DOWN
+                    if scroll_amount < 0
+                    else GestureState.SCROLL_UP
+                )
+                result = GestureResult(scroll_gesture, None, scroll_amount)
+                diagnostics = replace(
+                    diagnostics,
+                    raw_gesture=scroll_gesture,
+                )
+        elif (
+            diagnostics.index_only_hand
+            and diagnostics.wrist_x is not None
+            and diagnostics.hand_size is not None
+        ):
+            result = GestureResult(GestureState.IDLE, None)
+            diagnostics = replace(
+                diagnostics,
+                raw_gesture=GestureState.IDLE,
+            )
+            self._reset_scroll_tracking()
+            self._reset_tab_swipe()
+            history_gesture = self._history_from_index_only_hand(
                 diagnostics.wrist_x,
                 diagnostics.hand_size,
             )
-            if tab_gesture is not None:
-                result = GestureResult(tab_gesture, None)
+            if history_gesture is not None:
+                result = GestureResult(history_gesture, None)
                 diagnostics = replace(
                     diagnostics,
-                    raw_gesture=tab_gesture,
+                    raw_gesture=history_gesture,
                 )
         elif (
             diagnostics.two_finger_hand
@@ -144,24 +191,46 @@ class GestureEngine:
                 diagnostics,
                 raw_gesture=GestureState.IDLE,
             )
-            self._tab_swipe_origin_x = None
-            self._tab_swipe_origin_size = None
-            history_gesture = self._history_from_two_finger_hand(
+            self._reset_scroll_tracking()
+            self._reset_history_swipe()
+            tab_gesture = self._tab_from_two_finger_hand(
                 diagnostics.wrist_x,
                 diagnostics.hand_size,
             )
-            if history_gesture is not None:
-                result = GestureResult(history_gesture, None)
+            if tab_gesture is not None:
+                result = GestureResult(tab_gesture, None)
                 diagnostics = replace(
                     diagnostics,
-                    raw_gesture=history_gesture,
+                    raw_gesture=tab_gesture,
                 )
         else:
-            self._tab_swipe_origin_x = None
-            self._tab_swipe_origin_size = None
-            self._history_swipe_origin_x = None
-            self._history_swipe_origin_size = None
+            self._reset_scroll_tracking()
+            self._reset_history_swipe()
+            self._reset_tab_swipe()
 
+        if self._pinch_waiting_for_open_hand_release:
+            if not diagnostics.open_hand:
+                self._pinch_waiting_for_open_hand_release = False
+        elif diagnostics.open_hand:
+            self._pinch_enabled = True
+        elif hand is None:
+            self._pinch_enabled = False
+
+        pinch_detected = result.gesture in {
+            GestureState.PINCH_LEFT_CLICK,
+            GestureState.PINCH_RIGHT_CLICK,
+        }
+        if not self._pinch_enabled and pinch_detected:
+            result = GestureResult(
+                GestureState.IDLE,
+                result.pinch_distance_ratio,
+            )
+        elif pinch_detected:
+            self._pinch_enabled = False
+        diagnostics = replace(
+            diagnostics,
+            pinch_enabled=self._pinch_enabled,
+        )
         self._diagnostics = diagnostics
 
         if self._fist_rearm_pending:
@@ -208,37 +277,156 @@ class GestureEngine:
         self._stable_gesture = result.gesture
         return result
 
-    # Scrolling disabled; retain for possible reactivation.
-    # def _scroll_from_open_hand(
-    #     self,
-    #     wrist_y: float,
-    #     hand_size: float,
-    # ) -> GestureState | None:
-    #     if self._scroll_origin_y is None or self._scroll_origin_size is None:
-    #         self._scroll_origin_y = wrist_y
-    #         self._scroll_origin_size = hand_size
-    #         return None
-    #
-    #     reference_size = (self._scroll_origin_size + hand_size) / 2
-    #     displacement_ratio = (self._scroll_origin_y - wrist_y) / (
-    #         reference_size
-    #     )
-    #     if abs(displacement_ratio) < SCROLL_DISTANCE_RATIO:
-    #         return None
-    #
-    #     self._scroll_origin_y = None
-    #     self._scroll_origin_size = None
-    #     return (
-    #         GestureState.SCROLL_DOWN
-    #         if displacement_ratio > 0
-    #         else GestureState.SCROLL_UP
-    #     )
+    def _scroll_from_open_hand(
+        self,
+        wrist_x: float,
+        wrist_y: float,
+        hand_size: float,
+    ) -> int:
+        now = self._clock()
+        if (
+            self._scroll_last_x is None
+            or self._scroll_last_y is None
+            or self._scroll_last_size is None
+            or self._scroll_last_time is None
+            or self._scroll_origin_x is None
+            or self._scroll_origin_y is None
+            or self._scroll_origin_size is None
+        ):
+            self._scroll_origin_x = wrist_x
+            self._scroll_origin_y = wrist_y
+            self._scroll_origin_size = hand_size
+            self._scroll_started = False
+            self._update_scroll_position(wrist_x, wrist_y, hand_size, now)
+            return 0
 
-    def _tab_from_open_hand(
+        if not self._scroll_started:
+            origin_size = (self._scroll_origin_size + hand_size) / 2
+            vertical_displacement_ratio = (
+                self._scroll_origin_y - wrist_y
+            ) / origin_size
+            horizontal_displacement_ratio = (
+                self._scroll_origin_x - wrist_x
+            ) / origin_size
+            if (
+                abs(vertical_displacement_ratio)
+                < SCROLL_START_DISTANCE_RATIO
+                or abs(vertical_displacement_ratio)
+                < abs(horizontal_displacement_ratio)
+            ):
+                if abs(horizontal_displacement_ratio) > abs(
+                    vertical_displacement_ratio
+                ):
+                    self._scroll_origin_x = wrist_x
+                    self._scroll_origin_y = wrist_y
+                    self._scroll_origin_size = hand_size
+                self._update_scroll_position(wrist_x, wrist_y, hand_size, now)
+                return 0
+            self._scroll_started = True
+
+        return self._scroll_step(wrist_x, wrist_y, hand_size, now)
+
+    def _scroll_step(
+        self,
+        wrist_x: float,
+        wrist_y: float,
+        hand_size: float,
+        now: float,
+    ) -> int:
+        """Convert locked vertical palm velocity into integer wheel steps."""
+        assert self._scroll_last_x is not None
+        assert self._scroll_last_y is not None
+        assert self._scroll_last_size is not None
+        assert self._scroll_last_time is not None
+        elapsed = now - self._scroll_last_time
+        if elapsed <= 0:
+            # A coarse clock can repeat a timestamp; keep the previous sample
+            # so the next frame measures velocity over the combined interval.
+            return 0
+        reference_size = (self._scroll_last_size + hand_size) / 2
+
+        horizontal_velocity = (
+            (self._scroll_last_x - wrist_x) / reference_size / elapsed
+        )
+        vertical_velocity = (
+            (self._scroll_last_y - wrist_y) / reference_size / elapsed
+        )
+        vertical_motion = (
+            abs(vertical_velocity) > abs(horizontal_velocity)
+            and abs(vertical_velocity) >= SCROLL_DEAD_ZONE_RATIO_PER_SEC
+        )
+        target_velocity = 0.0
+        if vertical_motion:
+            target_velocity = max(
+                -SCROLL_MAX_HAND_SIZES_PER_SEC,
+                min(SCROLL_MAX_HAND_SIZES_PER_SEC, vertical_velocity),
+            )
+
+        self._scroll_velocity = (
+            SCROLL_SMOOTHING_ALPHA * target_velocity
+            + (1.0 - SCROLL_SMOOTHING_ALPHA) * self._scroll_velocity
+        )
+        if abs(self._scroll_velocity) < SCROLL_DEAD_ZONE_RATIO_PER_SEC:
+            self._scroll_velocity = 0.0
+            self._scroll_remainder = 0.0
+        else:
+            integration_time = min(elapsed, 0.1)
+            self._scroll_remainder += (
+                -self._scroll_velocity
+                * SCROLL_UNITS_PER_HAND_SIZE_PER_SEC
+                * integration_time
+            )
+
+        amount = int(self._scroll_remainder)
+        self._scroll_remainder -= amount
+        self._update_scroll_position(wrist_x, wrist_y, hand_size, now)
+        return amount
+
+    def _update_scroll_position(
+        self,
+        wrist_x: float,
+        wrist_y: float,
+        hand_size: float,
+        timestamp: float,
+    ) -> None:
+        self._scroll_last_x = wrist_x
+        self._scroll_last_y = wrist_y
+        self._scroll_last_size = hand_size
+        self._scroll_last_time = timestamp
+
+    def _reset_scroll_tracking(self) -> None:
+        self._scroll_last_x = None
+        self._scroll_last_y = None
+        self._scroll_last_size = None
+        self._scroll_last_time = None
+        self._scroll_origin_x = None
+        self._scroll_origin_y = None
+        self._scroll_origin_size = None
+        self._scroll_started = False
+        self._scroll_velocity = 0.0
+        self._scroll_remainder = 0.0
+
+    def _reset_history_swipe(self) -> None:
+        self._history_swipe_origin_x = None
+        self._history_swipe_origin_size = None
+
+    def _reset_tab_swipe(self) -> None:
+        self._tab_swipe_origin_x = None
+        self._tab_swipe_origin_size = None
+        self._tab_swipe_waiting_for_release = False
+
+    def _tab_from_two_finger_hand(
         self,
         wrist_x: float,
         hand_size: float,
     ) -> GestureState | None:
+        """Switch tabs once per two-finger pose.
+
+        After a switch, the pose must be released before the next one, so
+        bringing the hand back does not switch straight back again.
+        """
+        if self._tab_swipe_waiting_for_release:
+            return None
         if (
             self._tab_swipe_origin_x is None
             or self._tab_swipe_origin_size is None
@@ -254,15 +442,14 @@ class GestureEngine:
         if abs(displacement_ratio) < TAB_SWIPE_DISTANCE_RATIO:
             return None
 
-        self._tab_swipe_origin_x = None
-        self._tab_swipe_origin_size = None
+        self._tab_swipe_waiting_for_release = True
         return (
             GestureState.PREVIOUS_TAB
             if displacement_ratio > 0
             else GestureState.NEXT_TAB
         )
 
-    def _history_from_two_finger_hand(
+    def _history_from_index_only_hand(
         self,
         wrist_x: float,
         hand_size: float,
@@ -279,7 +466,7 @@ class GestureEngine:
         displacement_ratio = (self._history_swipe_origin_x - wrist_x) / (
             reference_size
         )
-        if abs(displacement_ratio) < TAB_SWIPE_DISTANCE_RATIO:
+        if abs(displacement_ratio) < HISTORY_SWIPE_DISTANCE_RATIO:
             return None
 
         self._history_swipe_origin_x = None
@@ -382,6 +569,13 @@ class GestureEngine:
         open_hand = (
             thumb_tip.conf >= CONFIDENCE_THRESHOLD
             and visible_fingers == len(finger_tips)
+            and middle_mcp.y < wrist.y
+            and abs(middle_mcp.x - wrist.x)
+            <= hand_size * OPEN_HAND_VERTICAL_ALIGNMENT_RATIO
+            and hypot(
+                hand.keypoints[17].x - hand.keypoints[5].x,
+                hand.keypoints[17].y - hand.keypoints[5].y,
+            ) >= hand_size * OPEN_HAND_PALM_WIDTH_RATIO
             and all(
                 angle is not None
                 and angle >= FINGER_EXTENDED_ANGLE_DEGREES
@@ -392,6 +586,19 @@ class GestureEngine:
             and right_pinch_ratio is not None
             and right_pinch_ratio > self.pinch_threshold
         )
+        index_only_hand = (
+            visible_fingers == len(finger_tips)
+            and finger_angles[0] is not None
+            and finger_angles[0] >= FINGER_EXTENDED_ANGLE_DEGREES
+            and finger_angles[1] is not None
+            and finger_angles[1] <= FINGER_CURLED_ANGLE_DEGREES
+            and finger_angles[2] is not None
+            and finger_angles[2] <= FINGER_CURLED_ANGLE_DEGREES
+            and finger_angles[3] is not None
+            and finger_angles[3] <= FINGER_CURLED_ANGLE_DEGREES
+        )
+        # Index and middle extended, ring and pinky curled. An active pinch
+        # is excluded so a right-click pinch is never taken for this pose.
         two_finger_hand = (
             visible_fingers == len(finger_tips)
             and finger_angles[0] is not None
@@ -402,6 +609,14 @@ class GestureEngine:
             and finger_angles[2] <= FINGER_CURLED_ANGLE_DEGREES
             and finger_angles[3] is not None
             and finger_angles[3] <= FINGER_CURLED_ANGLE_DEGREES
+            and (
+                left_pinch_ratio is None
+                or left_pinch_ratio > self.pinch_threshold
+            )
+            and (
+                right_pinch_ratio is None
+                or right_pinch_ratio > self.pinch_threshold
+            )
         )
 
         pinch_ratios = []
@@ -467,8 +682,10 @@ class GestureEngine:
             left_pinch_ratio=left_pinch_ratio,
             right_pinch_ratio=right_pinch_ratio,
             open_hand=open_hand,
+            index_only_hand=index_only_hand,
             two_finger_hand=two_finger_hand,
             wrist_x=wrist.x,
+            wrist_y=wrist.y,
             hand_size=hand_size,
         )
         return GestureResult(gesture, distance_ratio), diagnostics

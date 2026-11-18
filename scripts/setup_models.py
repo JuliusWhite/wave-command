@@ -39,7 +39,10 @@ def verify_optional_yolo_model() -> None:
             f"{YOLO_MODEL_PATH}."
         )
         if importlib.util.find_spec("ultralytics") is None:
-            print("[SETUP] Ultralytics is not installed; optional YOLO is unavailable.")
+            print(
+                "[SETUP] Ultralytics is not installed; optional YOLO is "
+                "unavailable (install requirements-yolo.txt to enable it)."
+            )
         return
 
     try:
@@ -47,7 +50,8 @@ def verify_optional_yolo_model() -> None:
     except ImportError:
         print(
             "[SETUP] Custom weights exist but Ultralytics is not installed; "
-            "MediaPipe will be used."
+            "MediaPipe will be used. Install requirements-yolo.txt to enable "
+            "YOLO."
         )
         return
 

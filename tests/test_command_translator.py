@@ -7,6 +7,7 @@ from src.translation.command_translator import (
     CommandTranslator,
     _close_current_window,
     _request_windows_foreground_close,
+    _scroll_mouse,
 )
 
 
@@ -92,21 +93,36 @@ class CommandTranslatorTests(unittest.TestCase):
         self.assertEqual(buttons, ["right"])
         self.assertIn("RIGHT_CLICK (Executed)", messages[0])
 
-    @unittest.skip("Scroll actions temporarily disabled")
     def test_scroll_direction_uses_configured_amount_without_click_cooldown(
         self,
     ) -> None:
         scrolls: list[int] = []
+        messages: list[str] = []
         translator = CommandTranslator(
             cooldown_sec=10,
+            emit=messages.append,
             scroll=scrolls.append,
         )
 
-        translator.process(GestureState.SCROLL_DOWN)
+        first = translator.process(
+            GestureState.SCROLL_DOWN,
+            scroll_amount=-2,
+        )
+        repeated = translator.process(
+            GestureState.SCROLL_DOWN,
+            scroll_amount=-1,
+        )
         translator.process(GestureState.IDLE)
-        translator.process(GestureState.SCROLL_UP)
+        reverse = translator.process(
+            GestureState.SCROLL_UP,
+            scroll_amount=1,
+        )
 
-        self.assertEqual(scrolls, [-10, 10])
+        self.assertEqual(scrolls, [-2, -1, 1])
+        self.assertIsNotNone(first)
+        self.assertIsNone(repeated)
+        self.assertIsNotNone(reverse)
+        self.assertEqual(len(messages), 2)
 
     def test_tab_swipes_send_browser_navigation_shortcuts(self) -> None:
         hotkeys: list[tuple[str, ...]] = []
@@ -205,14 +221,17 @@ class CommandTranslatorTests(unittest.TestCase):
         self.assertEqual(hotkeys, [("ctrl", "tab")])
         self.assertEqual(buttons, ["left"])
 
-    def test_scroll_action_is_disabled(self) -> None:
+    def test_scroll_action_dispatches_mouse_wheel(self) -> None:
         scrolls: list[int] = []
         translator = CommandTranslator(scroll=scrolls.append)
 
-        result = translator.process(GestureState.SCROLL_DOWN)
+        result = translator.process(
+            GestureState.SCROLL_DOWN,
+            scroll_amount=-1,
+        )
 
-        self.assertIsNone(result)
-        self.assertEqual(scrolls, [])
+        self.assertIsNotNone(result)
+        self.assertEqual(scrolls, [-1])
 
     @unittest.skip("Close-window action temporarily disabled")
     def test_fist_closes_window_without_clicking(self) -> None:
@@ -283,6 +302,19 @@ class CommandTranslatorTests(unittest.TestCase):
         self.assertIsNone(translator.process(GestureState.PINCH_LEFT_CLICK))
         self.assertEqual(len(messages), 1)
         self.assertEqual(buttons, ["left"])
+
+
+
+class PyAutoGuiDispatchTests(unittest.TestCase):
+    def test_dispatch_disables_pyautogui_pause(self) -> None:
+        fake_pyautogui = Mock()
+        fake_pyautogui.PAUSE = 0.1
+
+        with patch.dict(sys.modules, {"pyautogui": fake_pyautogui}):
+            _scroll_mouse(3)
+
+        self.assertEqual(fake_pyautogui.PAUSE, 0.0)
+        fake_pyautogui.scroll.assert_called_once_with(3)
 
 
 if __name__ == "__main__":

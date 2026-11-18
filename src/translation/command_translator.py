@@ -10,8 +10,10 @@ from typing import Literal
 
 from ctypes import wintypes
 
-from ..config import COMMAND_COOLDOWN_SEC, TAB_SWITCH_COOLDOWN_SEC
-# from ..config import SCROLL_AMOUNT  # Scroll action disabled.
+from ..config import (
+    COMMAND_COOLDOWN_SEC,
+    TAB_SWITCH_COOLDOWN_SEC,
+)
 from ..recognition.gesture_engine import GestureState
 
 MouseButton = Literal["left", "right"]
@@ -19,22 +21,29 @@ WM_SYSCOMMAND = 0x0112
 SC_CLOSE = 0xF060
 
 
-def _click_mouse(button: MouseButton) -> None:
+def _pyautogui():
+    """Import PyAutoGUI lazily and disable its per-call sleep.
+
+    PyAutoGUI sleeps for ``PAUSE`` seconds (0.1 by default) after every call.
+    Scrolling dispatches on consecutive frames, so that delay would block the
+    camera loop and drop the frame rate while the user scrolls.
+    """
     import pyautogui
 
-    pyautogui.click(button=button)
+    pyautogui.PAUSE = 0.0
+    return pyautogui
+
+
+def _click_mouse(button: MouseButton) -> None:
+    _pyautogui().click(button=button)
 
 
 def _scroll_mouse(amount: int) -> None:
-    import pyautogui
-
-    pyautogui.scroll(amount)
+    _pyautogui().scroll(amount)
 
 
 def _send_hotkey(*keys: str) -> None:
-    import pyautogui
-
-    pyautogui.hotkey(*keys)
+    _pyautogui().hotkey(*keys)
 
 
 def _close_current_window() -> None:
@@ -42,9 +51,7 @@ def _close_current_window() -> None:
         _request_windows_foreground_close()
         return
 
-    import pyautogui
-
-    pyautogui.hotkey("alt", "f4")
+    _pyautogui().hotkey("alt", "f4")
 
 
 def _request_windows_foreground_close() -> None:
@@ -80,9 +87,8 @@ class CommandTranslator:
         GestureState.PREVIOUS_TAB: "PREVIOUS_TAB",
         GestureState.BACK: "BACK",
         GestureState.FORWARD: "FORWARD",
-        # Scroll gestures disabled; retain mappings for possible reactivation.
-        # GestureState.SCROLL_UP: "SCROLL_UP",
-        # GestureState.SCROLL_DOWN: "SCROLL_DOWN",
+        GestureState.SCROLL_UP: "SCROLL_UP",
+        GestureState.SCROLL_DOWN: "SCROLL_DOWN",
         # Close-window action disabled; uncomment to restore.
         # GestureState.FIST_CLOSE_WINDOW: "CLOSE_WINDOW",
     }
@@ -90,10 +96,10 @@ class CommandTranslator:
         GestureState.PINCH_LEFT_CLICK: "left",
         GestureState.PINCH_RIGHT_CLICK: "right",
     }
-    # SCROLLS: dict[GestureState, int] = {
-    #     GestureState.SCROLL_UP: 1,
-    #     GestureState.SCROLL_DOWN: -1,
-    # }
+    SCROLLS: dict[GestureState, int] = {
+        GestureState.SCROLL_UP: 1,
+        GestureState.SCROLL_DOWN: -1,
+    }
 
     def __init__(
         self,
@@ -119,10 +125,19 @@ class CommandTranslator:
         self._last_navigation_at = float("-inf")
         self._last_tab_switch_at = float("-inf")
 
-    def process(self, gesture: GestureState) -> str | None:
+    def process(
+        self,
+        gesture: GestureState,
+        scroll_amount: int = 0,
+    ) -> str | None:
         """Dispatch new actions with click and navigation cooldowns."""
+        previous_gesture = self._previous_gesture
         is_new_action = (
-            gesture in self.ACTIONS and gesture != self._previous_gesture
+            gesture in self.ACTIONS
+            and (
+                gesture != previous_gesture
+                or (gesture in self.SCROLLS and scroll_amount != 0)
+            )
         )
         self._previous_gesture = gesture
 
@@ -130,7 +145,10 @@ class CommandTranslator:
             return None
 
         now = self._clock()
-        if now - self._last_tab_switch_at < TAB_SWITCH_COOLDOWN_SEC:
+        if (
+            gesture not in self.SCROLLS
+            and now - self._last_tab_switch_at < TAB_SWITCH_COOLDOWN_SEC
+        ):
             return None
         if (
             gesture in self.BUTTONS
@@ -153,10 +171,13 @@ class CommandTranslator:
         # if gesture == GestureState.FIST_CLOSE_WINDOW:
         #     self._close_window()
         # else:
-        # Scroll action disabled; retain for possible reactivation.
-        # if gesture in self.SCROLLS:
-        #     self._scroll(self.SCROLLS[gesture] * SCROLL_AMOUNT)
-        if gesture == GestureState.NEXT_TAB:
+        if gesture in self.SCROLLS:
+            if scroll_amount == 0:
+                return None
+            self._scroll(scroll_amount)
+            if gesture == previous_gesture:
+                return None
+        elif gesture == GestureState.NEXT_TAB:
             self._hotkey("ctrl", "tab")
             self._last_navigation_at = now
             self._last_tab_switch_at = now

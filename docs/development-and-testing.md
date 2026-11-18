@@ -8,6 +8,8 @@ src/config.py                   Shared thresholds and camera/model paths
 src/recognition/                 Model wrapper and geometric gesture rules
 src/translation/                 Gesture-to-mouse-action mapping
 src/webcam/                      Camera capture and drawing/HUD
+requirements.txt                 Base runtime dependencies (MediaPipe backend)
+requirements-yolo.txt            Optional Ultralytics/PyTorch for a YOLO hand model
 scripts/setup_models.py          Verify MediaPipe and optional YOLO weights
 tests/                           Unit tests for gestures and translation
 models/                          Optional local YOLO checkpoint and training output
@@ -29,11 +31,11 @@ Run unit tests:
 python -m unittest discover -s tests -v
 ```
 
-The tests cover pinch classification, ambiguous pinch rejection, open-hand tab-swipe direction and threshold, tab shortcut mapping and cooldown, idle/missing-hand behavior, translator edge-trigger behavior, and click cooldown suppression. Scroll and close-window gesture tests remain skipped while those features are disabled. Input dispatch is injected in tests; the tests do not require a webcam, OS input, or model inference.
+The tests cover pinch classification and activation, the open-palm scroll-start threshold and scroll-to-pinch re-arming, two-finger tab swipes (including the return stroke, pinch exclusion, and a scroll-then-swipe run through the translator), index-only history swipes, shortcut/wheel mappings and cooldowns, idle/missing-hand behavior, translator edge-trigger behavior, click cooldown suppression, PyAutoGUI dispatch with its pause disabled, and the HUD text. Close-window gesture tests remain skipped while that feature is disabled. Input dispatch is injected in tests; the tests do not require a webcam, OS input, or model inference.
 
 ## Configuration
 
-Edit `src/config.py` for camera ID, model path, confidence threshold, pinch ratio, cooldown, HUD duration, and skeleton connections. Keep behavior shared between services in configuration rather than duplicating magic values.
+Edit `src/config.py` for camera ID, model path, confidence threshold, pinch ratio, scroll start distance/dead zone/smoothing/speed, tab and history swipe distances, cooldowns, HUD duration, and skeleton connections. Keep behavior shared between services in configuration rather than duplicating magic values.
 
 ## Troubleshooting
 
@@ -51,7 +53,15 @@ Use a checkpoint trained for exactly 21 hand landmarks. Standard COCO pose model
 
 ### No click alert appears
 
-Check that landmarks 4 and 8 (left-click) or 4 and 12 (right-click) are detected confidently and the relevant pinch ratio is at or below `PINCH_THRESHOLD`. The translator clicks on a transition into a pinch, not every frame; it also applies `COMMAND_COOLDOWN_SEC`. Place the cursor over the intended target first.
+Show an upright open palm facing the camera before each pinch to arm pinch input; the HUD asks for an upright palm while the gate is unarmed. The hand must point upward and show a broad palm rather than being turned sideways. Detected scrolling disarms the open-hand activation; after scrolling, stop showing the open-hand pose and present it again to re-arm. Losing the hand also resets the gate. Then check that landmarks 4 and 8 (left-click) or 4 and 12 (right-click) are detected confidently and the relevant pinch ratio is at or below `PINCH_THRESHOLD`. The translator clicks on a transition into a pinch, not every frame; it also applies `COMMAND_COOLDOWN_SEC`, and ignores clicks for 1 second after a tab switch. Place the cursor over the intended target first.
+
+### Tab switching does not happen
+
+Check that the HUD reports `Two-finger tab pose: detected`. Index and middle must be straight and ring and pinky clearly curled; a relaxed ring finger often stays between the extended and curled angles, so the pose is not recognized. Keep the thumb away from the index and middle tips, because an active pinch cancels the pose. Swipe at least `TAB_SWIPE_DISTANCE_RATIO` (1.25) hand sizes sideways. After a switch, release the pose (any other pose, or move the hand out of view) before the next one, and wait out the 1-second cooldown.
+
+### Scrolling does not start
+
+Check that the HUD's raw state changes while the palm moves. The palm must stay upright and face the camera with all fingers straight. Movement must be mostly vertical and exceed `SCROLL_START_DISTANCE_RATIO` (0.15) hand sizes; sideways movement restarts the measurement. Scrolling acts on the window under the cursor.
 
 ## Session notes before commits
 

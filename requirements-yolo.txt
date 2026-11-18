@@ -1,0 +1,4 @@
+# Optional: only needed to run a custom 21-keypoint YOLO hand model at
+# models/hand-pose.pt. Ultralytics pulls in PyTorch, which is a large install.
+-r requirements.txt
+ultralytics>=8.2

@@ -1,5 +1,9 @@
 import unittest
 
+from src.config import (
+    SCROLL_MAX_HAND_SIZES_PER_SEC,
+    SCROLL_UNITS_PER_HAND_SIZE_PER_SEC,
+)
 from src.recognition.gesture_engine import GestureEngine, GestureState
 from src.recognition.hand_detector import HandPrediction, Keypoint
 from src.translation.command_translator import CommandTranslator
@@ -53,7 +57,59 @@ def make_open_hand(wrist_y: float, wrist_x: float = 100.0) -> HandPrediction:
     return HandPrediction(tuple(points), 1.0)
 
 
-def make_two_finger_hand(
+def rotate_hand(hand: HandPrediction, degrees: float) -> HandPrediction:
+    import math
+
+    wrist = hand.keypoints[0]
+    radians = math.radians(degrees)
+    points = []
+    for point in hand.keypoints:
+        dx = point.x - wrist.x
+        dy = point.y - wrist.y
+        points.append(
+            Keypoint(
+                point.id,
+                wrist.x + dx * math.cos(radians) - dy * math.sin(radians),
+                wrist.y + dx * math.sin(radians) + dy * math.cos(radians),
+                point.conf,
+                point.normalized_x,
+                point.normalized_y,
+            )
+        )
+    return HandPrediction(tuple(points), hand.confidence)
+
+
+def make_narrow_open_hand() -> HandPrediction:
+    hand = make_open_hand(300.0)
+    points = list(hand.keypoints)
+    for point_index, x in (
+        (5, 95.0), (6, 95.0), (8, 95.0),
+        (13, 101.0), (14, 101.0), (16, 101.0),
+        (17, 105.0), (18, 105.0), (20, 105.0),
+    ):
+        point = points[point_index]
+        points[point_index] = Keypoint(
+            point.id, x, point.y, point.conf,
+            point.normalized_x, point.normalized_y,
+        )
+    return HandPrediction(tuple(points), hand.confidence)
+
+
+def make_index_only_hand(
+    wrist_y: float,
+    wrist_x: float = 100.0,
+) -> HandPrediction:
+    hand = make_open_hand(wrist_y, wrist_x)
+    points = list(hand.keypoints)
+    for mcp_index, tip_index in ((9, 12), (13, 16), (17, 20)):
+        mcp = points[mcp_index]
+        points[tip_index] = Keypoint(
+            tip_index, mcp.x, mcp.y - 10.0, 1.0, 0.5, 0.5
+        )
+    return HandPrediction(tuple(points), hand.confidence)
+
+
+def make_index_middle_hand(
     wrist_y: float,
     wrist_x: float = 100.0,
 ) -> HandPrediction:
@@ -67,11 +123,11 @@ def make_two_finger_hand(
     return HandPrediction(tuple(points), hand.confidence)
 
 
-def make_two_finger_hand_with_right_pinch(
+def make_index_only_hand_with_right_pinch(
     wrist_y: float,
     wrist_x: float = 100.0,
 ) -> HandPrediction:
-    hand = make_two_finger_hand(wrist_y, wrist_x)
+    hand = make_index_only_hand(wrist_y, wrist_x)
     points = list(hand.keypoints)
     middle_tip = points[12]
     points[4] = Keypoint(
@@ -80,35 +136,17 @@ def make_two_finger_hand_with_right_pinch(
     return HandPrediction(tuple(points), hand.confidence)
 
 
-def make_bent_two_finger_hand(
+def make_bent_index_only_hand(
     wrist_y: float,
     wrist_x: float = 100.0,
 ) -> HandPrediction:
-    hand = make_two_finger_hand(wrist_y, wrist_x)
+    hand = make_index_only_hand(wrist_y, wrist_x)
     points = list(hand.keypoints)
-    for pip_index, tip_index in ((14, 16), (18, 20)):
+    for pip_index, tip_index in ((10, 12), (14, 16), (18, 20)):
         pip = points[pip_index]
         points[tip_index] = Keypoint(
             tip_index, pip.x + 40.0, pip.y, 1.0, 0.5, 0.5
         )
-    return HandPrediction(tuple(points), hand.confidence)
-
-
-def move_wrist(
-    hand: HandPrediction,
-    wrist_y: float | None = None,
-    wrist_x: float | None = None,
-) -> HandPrediction:
-    points = list(hand.keypoints)
-    wrist = points[0]
-    points[0] = Keypoint(
-        0,
-        wrist.x if wrist_x is None else wrist_x,
-        wrist.y if wrist_y is None else wrist_y,
-        wrist.conf,
-        wrist.normalized_x,
-        wrist.normalized_y,
-    )
     return HandPrediction(tuple(points), hand.confidence)
 
 
@@ -181,20 +219,70 @@ def make_opening_left_pinch() -> HandPrediction:
 
 
 class GestureEngineTests(unittest.TestCase):
+    def test_each_pinch_requires_open_hand_and_hand_loss_resets_gate(self) -> None:
+        engine = GestureEngine()
+        left_pinch = make_hand(100, 120)
+        right_pinch = make_hand(100, 250, middle_x=120)
+
+        self.assertEqual(engine.evaluate(left_pinch).gesture, GestureState.IDLE)
+        self.assertFalse(engine.diagnostics.pinch_enabled)
+
+        self.assertEqual(
+            engine.evaluate(make_open_hand(300.0)).gesture,
+            GestureState.IDLE,
+        )
+        self.assertTrue(engine.diagnostics.pinch_enabled)
+        self.assertEqual(
+            engine.evaluate(left_pinch).gesture,
+            GestureState.PINCH_LEFT_CLICK,
+        )
+        self.assertFalse(engine.diagnostics.pinch_enabled)
+        self.assertEqual(engine.evaluate(right_pinch).gesture, GestureState.IDLE)
+
+        engine.evaluate(make_open_hand(300.0))
+        self.assertEqual(
+            engine.evaluate(right_pinch).gesture,
+            GestureState.PINCH_RIGHT_CLICK,
+        )
+        self.assertFalse(engine.diagnostics.pinch_enabled)
+
+        engine.evaluate(None)
+        self.assertFalse(engine.diagnostics.pinch_enabled)
+        self.assertEqual(engine.evaluate(left_pinch).gesture, GestureState.IDLE)
+
+    def test_pinch_gate_requires_upright_palm_facing_camera(self) -> None:
+        for pose_name, open_pose in (
+            ("rotated", rotate_hand(make_open_hand(300.0), 90.0)),
+            ("narrow", make_narrow_open_hand()),
+        ):
+            with self.subTest(pose=pose_name):
+                engine = GestureEngine()
+                engine.evaluate(open_pose)
+
+                self.assertFalse(engine.diagnostics.pinch_enabled)
+                self.assertEqual(
+                    engine.evaluate(make_hand(100, 120)).gesture,
+                    GestureState.IDLE,
+                )
+
     def test_thumb_index_pinch_is_left_click(self) -> None:
-        result = GestureEngine(pinch_threshold=0.35).evaluate(make_hand(100, 120))
+        engine = GestureEngine(pinch_threshold=0.35)
+        engine.evaluate(make_open_hand(300.0))
+        result = engine.evaluate(make_hand(100, 120))
         self.assertEqual(result.gesture, GestureState.PINCH_LEFT_CLICK)
         self.assertAlmostEqual(result.pinch_distance_ratio, 0.2)
 
     def test_thumb_middle_pinch_is_right_click(self) -> None:
-        result = GestureEngine(pinch_threshold=0.35).evaluate(
-            make_hand(100, 250, middle_x=120)
-        )
+        engine = GestureEngine(pinch_threshold=0.35)
+        engine.evaluate(make_open_hand(300.0))
+        result = engine.evaluate(make_hand(100, 250, middle_x=120))
         self.assertEqual(result.gesture, GestureState.PINCH_RIGHT_CLICK)
         self.assertAlmostEqual(result.pinch_distance_ratio, 0.2)
 
     def test_left_pinch_wins_when_other_fingers_are_curled(self) -> None:
-        result = GestureEngine().evaluate(make_left_pinch_with_curled_fingers())
+        engine = GestureEngine()
+        engine.evaluate(make_open_hand(300.0))
+        result = engine.evaluate(make_left_pinch_with_curled_fingers())
 
         self.assertEqual(result.gesture, GestureState.PINCH_LEFT_CLICK)
 
@@ -203,10 +291,12 @@ class GestureEngineTests(unittest.TestCase):
         self.assertEqual(result.gesture, GestureState.IDLE)
 
     def test_default_pinch_threshold_recognizes_both_pinches_sooner(self) -> None:
-        left_pinch = GestureEngine().evaluate(make_hand(100, 142))
-        right_pinch = GestureEngine().evaluate(
-            make_hand(100, 250, middle_x=142)
-        )
+        left_engine = GestureEngine()
+        left_engine.evaluate(make_open_hand(300.0))
+        left_pinch = left_engine.evaluate(make_hand(100, 142))
+        right_engine = GestureEngine()
+        right_engine.evaluate(make_open_hand(300.0))
+        right_pinch = right_engine.evaluate(make_hand(100, 250, middle_x=142))
         open_hand = GestureEngine().evaluate(make_hand(100, 146))
 
         self.assertEqual(left_pinch.gesture, GestureState.PINCH_LEFT_CLICK)
@@ -214,144 +304,379 @@ class GestureEngineTests(unittest.TestCase):
         self.assertEqual(open_hand.gesture, GestureState.IDLE)
 
     def test_similar_left_and_right_pinch_ratios_are_ambiguous(self) -> None:
-        result = GestureEngine().evaluate(
-            make_hand(100, 124, middle_x=128)
-        )
+        engine = GestureEngine()
+        engine.evaluate(make_open_hand(300.0))
+        result = engine.evaluate(make_hand(100, 124, middle_x=128))
 
         self.assertEqual(result.gesture, GestureState.IDLE)
         self.assertAlmostEqual(result.pinch_distance_ratio, 0.24)
 
     def test_clearly_dominant_right_pinch_wins_when_both_are_active(self) -> None:
-        result = GestureEngine().evaluate(
-            make_hand(100, 130, middle_x=120)
-        )
+        engine = GestureEngine()
+        engine.evaluate(make_open_hand(300.0))
+        result = engine.evaluate(make_hand(100, 130, middle_x=120))
 
         self.assertEqual(result.gesture, GestureState.PINCH_RIGHT_CLICK)
 
     def test_clearly_dominant_left_pinch_wins_when_both_are_active(self) -> None:
-        result = GestureEngine().evaluate(
-            make_hand(100, 120, middle_x=130)
-        )
+        engine = GestureEngine()
+        engine.evaluate(make_open_hand(300.0))
+        result = engine.evaluate(make_hand(100, 120, middle_x=130))
 
         self.assertEqual(result.gesture, GestureState.PINCH_LEFT_CLICK)
 
-    @unittest.skip("Scroll gesture temporarily disabled")
-    def test_open_hand_swing_bottom_to_top_scrolls_down(self) -> None:
-        engine = GestureEngine()
-
-        self.assertEqual(
-            engine.evaluate(make_open_hand(300.0)).gesture,
-            GestureState.IDLE,
-        )
-        result = engine.evaluate(
-            move_wrist(make_open_hand(300.0), 220.0)
-        )
-
-        self.assertEqual(result.gesture, GestureState.SCROLL_DOWN)
-        self.assertEqual(
-            engine.evaluate(make_open_hand(220.0)).gesture,
-            GestureState.IDLE,
-        )
-        self.assertEqual(
-            engine.evaluate(make_open_hand(140.0)).gesture,
-            GestureState.SCROLL_DOWN,
-        )
-
-    @unittest.skip("Scroll gesture temporarily disabled")
-    def test_open_hand_swing_top_to_bottom_scrolls_up(self) -> None:
-        engine = GestureEngine()
-
-        engine.evaluate(make_open_hand(220.0))
-        result = engine.evaluate(
-            move_wrist(make_open_hand(220.0), 360.0)
-        )
-
-        self.assertEqual(result.gesture, GestureState.SCROLL_UP)
-
-    @unittest.skip("Scroll gesture temporarily disabled")
-    def test_scroll_waits_for_enough_open_hand_movement(self) -> None:
-        engine = GestureEngine()
+    def test_open_hand_scroll_emits_smoothed_wheel_deltas_and_stops(self) -> None:
+        current_time = [0.0]
+        engine = GestureEngine(clock=lambda: current_time[0])
 
         engine.evaluate(make_open_hand(300.0))
-        self.assertEqual(
-            engine.evaluate(
-                move_wrist(make_open_hand(300.0), 270.0)
-            ).gesture,
-            GestureState.IDLE,
-        )
-        self.assertEqual(
-            engine.evaluate(
-                move_wrist(make_open_hand(300.0), 220.0)
-            ).gesture,
-            GestureState.SCROLL_DOWN,
+        current_time[0] += 0.05
+        initial_movement = engine.evaluate(make_open_hand(290.0))
+        self.assertEqual(initial_movement.gesture, GestureState.IDLE)
+        self.assertEqual(initial_movement.scroll_amount, 0)
+        self.assertTrue(engine.diagnostics.pinch_enabled)
+
+        scroll_results = []
+        for wrist_y in (280.0, 270.0, 260.0):
+            current_time[0] += 0.05
+            scroll_results.append(
+                engine.evaluate(make_open_hand(wrist_y))
+            )
+
+        self.assertTrue(
+            all(
+                result.gesture == GestureState.SCROLL_DOWN
+                and result.scroll_amount < 0
+                and abs(result.scroll_amount)
+                <= (
+                    SCROLL_MAX_HAND_SIZES_PER_SEC
+                    * SCROLL_UNITS_PER_HAND_SIZE_PER_SEC
+                    * 0.05
+                    + 1
+                )
+                for result in scroll_results
+            )
         )
 
-    @unittest.skip("Scroll gesture temporarily disabled")
-    def test_non_open_hand_resets_scroll_tracking(self) -> None:
-        engine = GestureEngine()
+        stationary_results = []
+        for _ in range(12):
+            current_time[0] += 0.05
+            stationary_results.append(
+                engine.evaluate(make_open_hand(260.0))
+            )
+
+        self.assertEqual(
+            stationary_results[-1].gesture,
+            GestureState.IDLE,
+        )
+        self.assertEqual(stationary_results[-1].scroll_amount, 0)
+
+    def test_downward_open_hand_motion_emits_positive_scroll(self) -> None:
+        current_time = [0.0]
+        engine = GestureEngine(clock=lambda: current_time[0])
+
+        engine.evaluate(make_open_hand(220.0))
+        current_time[0] = 0.05
+        first_movement = engine.evaluate(make_open_hand(230.0))
+        self.assertEqual(first_movement.gesture, GestureState.IDLE)
+        self.assertEqual(first_movement.scroll_amount, 0)
+
+        current_time[0] = 0.1
+        result = engine.evaluate(make_open_hand(240.0))
+
+        self.assertEqual(result.gesture, GestureState.SCROLL_UP)
+        self.assertGreater(result.scroll_amount, 0)
+
+    def test_open_hand_scroll_ignores_sub_dead_zone_movement(self) -> None:
+        current_time = [0.0]
+        engine = GestureEngine(clock=lambda: current_time[0])
+
+        engine.evaluate(make_open_hand(300.0))
+        current_time[0] = 0.05
+        result = engine.evaluate(make_open_hand(299.0))
+
+        self.assertEqual(result.gesture, GestureState.IDLE)
+        self.assertEqual(result.scroll_amount, 0)
+        self.assertTrue(engine.diagnostics.pinch_enabled)
+
+    def test_small_open_hand_jitter_does_not_scroll_or_disarm_pinches(
+        self,
+    ) -> None:
+        current_time = [0.0]
+        engine = GestureEngine(clock=lambda: current_time[0])
+        engine.evaluate(make_open_hand(300.0))
+
+        for wrist_y in (298.0, 302.0, 299.0, 301.0, 300.0):
+            current_time[0] += 1 / 30
+            result = engine.evaluate(make_open_hand(wrist_y))
+
+            self.assertEqual(result.gesture, GestureState.IDLE)
+            self.assertEqual(result.scroll_amount, 0)
+            self.assertTrue(engine.diagnostics.pinch_enabled)
+
+    def test_non_open_hand_resets_scroll_velocity(self) -> None:
+        current_time = [0.0]
+        engine = GestureEngine(clock=lambda: current_time[0])
 
         engine.evaluate(make_open_hand(300.0))
         engine.evaluate(make_hand(50.0, 150.0))
+        current_time[0] = 0.05
         self.assertEqual(
             engine.evaluate(make_open_hand(220.0)).gesture,
             GestureState.IDLE,
         )
+        current_time[0] = 0.1
         self.assertEqual(
-            engine.evaluate(make_open_hand(140.0)).gesture,
-            GestureState.SCROLL_DOWN,
-        )
-
-    def test_open_hand_swipe_right_to_left_selects_previous_tab(self) -> None:
-        engine = GestureEngine()
-        start = make_open_hand(300.0, wrist_x=200.0)
-
-        engine.evaluate(start)
-        result = engine.evaluate(make_open_hand(300.0, wrist_x=0.0))
-
-        self.assertEqual(result.gesture, GestureState.PREVIOUS_TAB)
-        self.assertEqual(
-            engine.evaluate(make_open_hand(300.0, wrist_x=0.0)).gesture,
+            engine.evaluate(make_open_hand(210.0)).gesture,
             GestureState.IDLE,
         )
+        current_time[0] = 0.15
+        result = engine.evaluate(make_open_hand(200.0))
 
-    def test_open_hand_swipe_left_to_right_selects_next_tab(self) -> None:
+        self.assertEqual(result.gesture, GestureState.SCROLL_DOWN)
+        self.assertLess(result.scroll_amount, 0)
+
+    def test_horizontal_open_hand_swipes_do_not_change_tabs(self) -> None:
+        for start_x, end_x in ((200.0, 0.0), (0.0, 200.0)):
+            with self.subTest(start_x=start_x, end_x=end_x):
+                engine = GestureEngine()
+                engine.evaluate(make_open_hand(300.0, wrist_x=start_x))
+
+                result = engine.evaluate(
+                    make_open_hand(300.0, wrist_x=end_x)
+                )
+
+                self.assertEqual(result.gesture, GestureState.IDLE)
+                self.assertEqual(result.scroll_amount, 0)
+
+    def test_two_finger_swipes_change_tabs(self) -> None:
+        for start_x, end_x, expected in (
+            (200.0, 0.0, GestureState.PREVIOUS_TAB),
+            (0.0, 200.0, GestureState.NEXT_TAB),
+        ):
+            with self.subTest(start_x=start_x, end_x=end_x):
+                engine = GestureEngine()
+                engine.evaluate(make_index_middle_hand(300.0, wrist_x=start_x))
+
+                results = []
+                step = (end_x - start_x) / 5
+                for frame in range(1, 6):
+                    results.append(
+                        engine.evaluate(
+                            make_index_middle_hand(
+                                300.0,
+                                wrist_x=start_x + step * frame,
+                            )
+                        )
+                    )
+
+                # 0.4 hand sizes per frame: the switch fires once on the
+                # fourth frame (1.6 >= 1.25), then waits for pose release.
+                self.assertEqual(
+                    [result.gesture for result in results],
+                    [GestureState.IDLE] * 3 + [expected, GestureState.IDLE],
+                )
+                self.assertTrue(engine.diagnostics.two_finger_hand)
+
+    def test_two_finger_return_stroke_requires_pose_release(self) -> None:
         engine = GestureEngine()
-        start = make_open_hand(300.0, wrist_x=0.0)
 
-        engine.evaluate(start)
-        result = engine.evaluate(make_open_hand(300.0, wrist_x=200.0))
+        engine.evaluate(make_index_middle_hand(300.0, wrist_x=0.0))
+        self.assertEqual(
+            engine.evaluate(make_index_middle_hand(300.0, wrist_x=200.0)).gesture,
+            GestureState.NEXT_TAB,
+        )
+        for wrist_x in (100.0, 0.0, -100.0):
+            self.assertEqual(
+                engine.evaluate(
+                    make_index_middle_hand(300.0, wrist_x=wrist_x)
+                ).gesture,
+                GestureState.IDLE,
+            )
 
-        self.assertEqual(result.gesture, GestureState.NEXT_TAB)
+        engine.evaluate(make_hand(50.0, 150.0))
+        engine.evaluate(make_index_middle_hand(300.0, wrist_x=0.0))
+        self.assertEqual(
+            engine.evaluate(make_index_middle_hand(300.0, wrist_x=200.0)).gesture,
+            GestureState.NEXT_TAB,
+        )
 
-    def test_two_finger_swipe_right_to_left_goes_back(self) -> None:
+    def test_two_finger_vertical_movement_does_not_scroll(self) -> None:
+        current_time = [0.0]
+        engine = GestureEngine(clock=lambda: current_time[0])
+
+        engine.evaluate(make_index_middle_hand(300.0))
+        for wrist_y in (280.0, 260.0, 240.0, 220.0):
+            current_time[0] += 0.05
+            result = engine.evaluate(make_index_middle_hand(wrist_y))
+            self.assertEqual(result.gesture, GestureState.IDLE)
+            self.assertEqual(result.scroll_amount, 0)
+
+    def test_right_pinch_is_not_mistaken_for_two_finger_pose(self) -> None:
+        hand = make_index_middle_hand(300.0)
+        points = list(hand.keypoints)
+        middle_tip = points[12]
+        points[4] = Keypoint(
+            4, middle_tip.x, middle_tip.y, 1.0, 0.5, 0.5
+        )
         engine = GestureEngine()
 
-        engine.evaluate(make_two_finger_hand(300.0, wrist_x=200.0))
+        engine.evaluate(make_open_hand(300.0))
+        result = engine.evaluate(HandPrediction(tuple(points), hand.confidence))
+
+        self.assertFalse(engine.diagnostics.two_finger_hand)
+        self.assertEqual(result.gesture, GestureState.PINCH_RIGHT_CLICK)
+
+    def test_scroll_and_two_finger_tab_swipe_dispatch_through_translator(
+        self,
+    ) -> None:
+        current_time = [0.0]
+        engine = GestureEngine(clock=lambda: current_time[0])
+        hotkeys = []
+        scrolls = []
+        translator = CommandTranslator(
+            clock=lambda: current_time[0],
+            emit=lambda _message: None,
+            hotkey=lambda *keys: hotkeys.append(keys),
+            scroll=scrolls.append,
+        )
+
+        def feed(hand):
+            current_time[0] += 0.05
+            result = engine.evaluate(hand)
+            translator.process(result.gesture, result.scroll_amount)
+
+        # Open-palm scrolling with sideways drift never switches tabs.
+        feed(make_open_hand(300.0))
+        for wrist_y in (280.0, 260.0, 240.0, 230.0):
+            feed(make_open_hand(wrist_y))
+        for wrist_x in (140.0, 200.0, 260.0, 320.0):
+            feed(make_open_hand(230.0, wrist_x=wrist_x))
+        self.assertTrue(scrolls)
+        self.assertEqual(hotkeys, [])
+
+        # A two-finger swipe switches tabs and never scrolls.
+        scroll_count = len(scrolls)
+        current_time[0] += 1.0
+        feed(make_index_middle_hand(300.0, wrist_x=320.0))
+        for wrist_x in (260.0, 200.0, 140.0, 80.0, 20.0):
+            feed(make_index_middle_hand(300.0, wrist_x=wrist_x))
+        self.assertEqual(hotkeys, [("ctrl", "shift", "tab")])
+        self.assertEqual(len(scrolls), scroll_count)
+
+    def test_scroll_with_sideways_drift_never_switches_tabs(self) -> None:
+        current_time = [0.0]
+        engine = GestureEngine(clock=lambda: current_time[0])
+        engine.evaluate(make_open_hand(300.0, wrist_x=100.0))
+
+        gestures = []
+        # Lock to scrolling, then drift far enough sideways for a tab swipe.
+        for wrist_x, wrist_y in (
+            (100.0, 280.0),
+            (100.0, 260.0),
+            (140.0, 250.0),
+            (200.0, 245.0),
+            (260.0, 245.0),
+        ):
+            current_time[0] += 0.05
+            gestures.append(
+                engine.evaluate(
+                    make_open_hand(wrist_y, wrist_x=wrist_x)
+                ).gesture
+            )
+
+        self.assertIn(GestureState.SCROLL_DOWN, gestures)
+        self.assertNotIn(GestureState.NEXT_TAB, gestures)
+        self.assertNotIn(GestureState.PREVIOUS_TAB, gestures)
+
+    def test_scroll_disarms_pinches_until_open_hand_is_presented_again(
+        self,
+    ) -> None:
+        for accidental_pinch, expected_gesture in (
+            (
+                make_hand(100, 120, middle_x=130),
+                GestureState.PINCH_LEFT_CLICK,
+            ),
+            (
+                make_hand(100, 200, middle_x=130),
+                GestureState.PINCH_RIGHT_CLICK,
+            ),
+        ):
+            with self.subTest(gesture=expected_gesture):
+                current_time = [0.0]
+                engine = GestureEngine(clock=lambda: current_time[0])
+
+                engine.evaluate(make_open_hand(300.0))
+                self.assertTrue(engine.diagnostics.pinch_enabled)
+
+                current_time[0] = 0.05
+                initial_movement = engine.evaluate(make_open_hand(290.0))
+                self.assertEqual(initial_movement.gesture, GestureState.IDLE)
+                self.assertTrue(engine.diagnostics.pinch_enabled)
+                current_time[0] = 0.1
+                scroll_result = engine.evaluate(make_open_hand(280.0))
+                self.assertEqual(
+                    scroll_result.gesture,
+                    GestureState.SCROLL_DOWN,
+                )
+                self.assertFalse(engine.diagnostics.pinch_enabled)
+
+                self.assertEqual(
+                    engine.evaluate(accidental_pinch).gesture,
+                    GestureState.IDLE,
+                )
+                self.assertEqual(
+                    engine.evaluate(accidental_pinch).gesture,
+                    GestureState.IDLE,
+                )
+
+                engine.evaluate(make_open_hand(290.0))
+                self.assertTrue(engine.diagnostics.pinch_enabled)
+                self.assertEqual(
+                    engine.evaluate(accidental_pinch).gesture,
+                    expected_gesture,
+                )
+
+    def test_index_only_swipe_right_to_left_goes_back(self) -> None:
+        engine = GestureEngine()
+
+        engine.evaluate(make_index_only_hand(300.0, wrist_x=200.0))
         result = engine.evaluate(
-            make_two_finger_hand(300.0, wrist_x=0.0)
+            make_index_only_hand(300.0, wrist_x=0.0)
         )
 
         self.assertEqual(result.gesture, GestureState.BACK)
 
-    def test_two_finger_swipe_left_to_right_goes_forward(self) -> None:
+    def test_index_only_swipe_left_to_right_goes_forward(self) -> None:
         engine = GestureEngine()
 
-        engine.evaluate(make_two_finger_hand(300.0, wrist_x=0.0))
+        engine.evaluate(make_index_only_hand(300.0, wrist_x=0.0))
         result = engine.evaluate(
-            make_two_finger_hand(300.0, wrist_x=200.0)
+            make_index_only_hand(300.0, wrist_x=200.0)
         )
 
         self.assertEqual(result.gesture, GestureState.FORWARD)
 
-    def test_two_finger_swipe_does_not_require_thumb_visibility(self) -> None:
+    def test_index_and_middle_swipe_switches_tabs_not_history(self) -> None:
         engine = GestureEngine()
-        start = make_two_finger_hand(300.0, wrist_x=200.0)
+
+        engine.evaluate(make_index_middle_hand(300.0, wrist_x=200.0))
+        result = engine.evaluate(
+            make_index_middle_hand(300.0, wrist_x=0.0)
+        )
+
+        self.assertEqual(result.gesture, GestureState.PREVIOUS_TAB)
+        self.assertFalse(engine.diagnostics.index_only_hand)
+
+    def test_index_only_swipe_does_not_require_thumb_visibility(self) -> None:
+        engine = GestureEngine()
+        start = make_index_only_hand(300.0, wrist_x=200.0)
         start_points = list(start.keypoints)
         thumb = start_points[4]
         start_points[4] = Keypoint(
             4, thumb.x, thumb.y, 0.1, thumb.normalized_x, thumb.normalized_y
         )
-        end = make_two_finger_hand(300.0, wrist_x=0.0)
+        end = make_index_only_hand(300.0, wrist_x=0.0)
         end_points = list(end.keypoints)
         thumb = end_points[4]
         end_points[4] = Keypoint(
@@ -363,13 +688,13 @@ class GestureEngineTests(unittest.TestCase):
 
         self.assertEqual(result.gesture, GestureState.BACK)
 
-    def test_two_finger_pose_suppresses_right_pinch_until_swipe(self) -> None:
+    def test_index_only_pose_suppresses_right_pinch_until_swipe(self) -> None:
         engine = GestureEngine()
-        start = make_two_finger_hand_with_right_pinch(
+        start = make_index_only_hand_with_right_pinch(
             300.0,
             wrist_x=200.0,
         )
-        end = make_two_finger_hand_with_right_pinch(
+        end = make_index_only_hand_with_right_pinch(
             300.0,
             wrist_x=0.0,
         )
@@ -377,40 +702,45 @@ class GestureEngineTests(unittest.TestCase):
         self.assertEqual(engine.evaluate(start).gesture, GestureState.IDLE)
         self.assertEqual(engine.evaluate(end).gesture, GestureState.BACK)
 
-    def test_bent_ring_and_pinky_are_down_even_when_their_tips_are_far_from_mcp(
+    def test_bent_non_index_fingers_are_down_even_when_tips_are_far_from_mcp(
         self,
     ) -> None:
         engine = GestureEngine()
 
-        engine.evaluate(make_bent_two_finger_hand(300.0, wrist_x=200.0))
+        engine.evaluate(make_bent_index_only_hand(300.0, wrist_x=200.0))
         result = engine.evaluate(
-            make_bent_two_finger_hand(300.0, wrist_x=0.0)
+            make_bent_index_only_hand(300.0, wrist_x=0.0)
         )
 
         self.assertEqual(result.gesture, GestureState.BACK)
 
-    def test_tab_swipe_requires_enough_horizontal_wrist_movement(self) -> None:
-        engine = GestureEngine()
-        start = make_open_hand(300.0, wrist_x=200.0)
+    def test_vertical_open_hand_movement_scrolls_without_switching_tabs(
+        self,
+    ) -> None:
+        current_time = [0.0]
+        engine = GestureEngine(clock=lambda: current_time[0])
 
-        engine.evaluate(start)
-        self.assertEqual(
-            engine.evaluate(make_open_hand(300.0, wrist_x=100.0)).gesture,
-            GestureState.IDLE,
+        engine.evaluate(make_open_hand(300.0))
+        current_time[0] = 0.05
+        result = engine.evaluate(make_open_hand(220.0))
+
+        self.assertEqual(result.gesture, GestureState.SCROLL_DOWN)
+        self.assertLess(result.scroll_amount, 0)
+
+    def test_diagonal_open_hand_movement_neither_scrolls_nor_changes_tabs(
+        self,
+    ) -> None:
+        current_time = [0.0]
+        engine = GestureEngine(clock=lambda: current_time[0])
+
+        engine.evaluate(make_open_hand(300.0, wrist_x=0.0))
+        current_time[0] = 0.05
+        result = engine.evaluate(
+            make_open_hand(140.0, wrist_x=200.0)
         )
-        self.assertEqual(
-            engine.evaluate(make_open_hand(300.0, wrist_x=50.0)).gesture,
-            GestureState.PREVIOUS_TAB,
-        )
-
-    def test_vertical_open_hand_movement_does_not_switch_tabs(self) -> None:
-        engine = GestureEngine()
-        start = make_open_hand(300.0)
-
-        engine.evaluate(start)
-        result = engine.evaluate(move_wrist(start, wrist_y=220.0))
 
         self.assertEqual(result.gesture, GestureState.IDLE)
+        self.assertEqual(result.scroll_amount, 0)
 
     def test_pinch_is_not_misclassified_as_an_open_hand_swipe(self) -> None:
         hand = make_open_hand(300.0)
@@ -425,9 +755,9 @@ class GestureEngineTests(unittest.TestCase):
             index_tip.normalized_y,
         )
 
-        result = GestureEngine().evaluate(
-            HandPrediction(tuple(points), hand.confidence)
-        )
+        engine = GestureEngine()
+        engine.evaluate(make_open_hand(300.0))
+        result = engine.evaluate(HandPrediction(tuple(points), hand.confidence))
 
         self.assertEqual(result.gesture, GestureState.PINCH_LEFT_CLICK)
 
@@ -436,9 +766,9 @@ class GestureEngineTests(unittest.TestCase):
         points = list(hand.keypoints)
         points[6] = Keypoint(6, 100.0, 100.0, 0.1, 0.5, 0.5)
 
-        result = GestureEngine().evaluate(
-            HandPrediction(tuple(points), hand.confidence)
-        )
+        engine = GestureEngine()
+        engine.evaluate(make_open_hand(300.0))
+        result = engine.evaluate(HandPrediction(tuple(points), hand.confidence))
 
         self.assertEqual(result.gesture, GestureState.PINCH_LEFT_CLICK)
 

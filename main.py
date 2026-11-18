@@ -24,7 +24,10 @@ def main() -> None:
         hands = detector.detect(frame)
         visualizer.backend_name = detector.backend_name
         gesture_result = gesture_engine.evaluate(hands[0] if hands else None)
-        alert = translator.process(gesture_result.gesture)
+        alert = translator.process(
+            gesture_result.gesture,
+            scroll_amount=gesture_result.scroll_amount,
+        )
         if alert:
             last_alert = alert
             last_alert_at = time.monotonic()

@@ -2,7 +2,10 @@ import sys
 import unittest
 from unittest.mock import Mock, patch
 
-from src.recognition.gesture_engine import GestureDiagnostics, GestureState
+from src.recognition.gesture_engine import (
+    GestureDiagnostics,
+    GestureState,
+)
 from src.webcam.visualizer import FrameState, Visualizer
 
 
@@ -22,6 +25,8 @@ class VisualizerTests(unittest.TestCase):
                 left_pinch_ratio=0.2,
                 right_pinch_ratio=0.6,
                 fist_confirmation_frames=2,
+                pinch_enabled=True,
+                two_finger_hand=True,
             ),
         )
 
@@ -31,6 +36,14 @@ class VisualizerTests(unittest.TestCase):
         text_lines = [call.args[1] for call in cv2.putText.call_args_list]
         self.assertIn("Raw: PINCH_LEFT_CLICK", text_lines)
         self.assertIn("Filter: tips together confirm 2/3", text_lines)
+        self.assertIn("Pinch gate: armed", text_lines)
+        self.assertIn("Index-only history pose: not detected", text_lines)
+        self.assertIn("Two-finger tab pose: detected", text_lines)
+        self.assertIn(
+            "Palm: scroll | 2 fingers: tabs | "
+            "Index: history | Pinch | Q: quit",
+            text_lines,
+        )
         self.assertIn("Curl I/M/R/P: 0.80/1.20/--/1.10 (2/4)", text_lines)
         self.assertIn("Pinch L/R: 0.20/0.60 (threshold 0.45)", text_lines)
 

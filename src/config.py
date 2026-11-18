@@ -13,10 +13,17 @@ CONFIDENCE_THRESHOLD = 0.5
 PINCH_THRESHOLD = 0.45
 # Required ratio difference when both pinch targets are within the threshold.
 PINCH_DOMINANCE_MARGIN = 0.08
-# Scroll gesture disabled; retained for possible reactivation.
-# SCROLL_DISTANCE_RATIO = 0.75
-# SCROLL_AMOUNT = 10
+# Minimum vertical wrist displacement, normalized by hand size, before scrolling.
+SCROLL_START_DISTANCE_RATIO = 0.15
+# Open-palm scroll velocity is normalized to hand sizes per second.
+SCROLL_DEAD_ZONE_RATIO_PER_SEC = 0.08
+SCROLL_SMOOTHING_ALPHA = 0.25
+SCROLL_UNITS_PER_HAND_SIZE_PER_SEC = 1500.0
+SCROLL_MAX_HAND_SIZES_PER_SEC = 2.5
+# Horizontal wrist displacement, in hand sizes, of an index-and-middle-finger
+# swipe that switches the browser tab.
 TAB_SWIPE_DISTANCE_RATIO = 1.25
+HISTORY_SWIPE_DISTANCE_RATIO = 1.25
 TAB_SWITCH_COOLDOWN_SEC = 1.0
 COMMAND_COOLDOWN_SEC = 1.5
 HUD_ALERT_DURATION_SEC = 2.5

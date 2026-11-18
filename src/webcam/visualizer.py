@@ -150,13 +150,23 @@ class Visualizer:
             (f"Raw: {diagnostics.raw_gesture.value}", self._TEXT_COLOR),
             (filter_text, self._TEXT_COLOR),
             (
+                "Pinch gate: "
+                f"{'armed' if diagnostics.pinch_enabled else 'show upright palm'}",
+                self._TEXT_COLOR,
+            ),
+            (
                 "Curl I/M/R/P: "
                 f"{curl_text} "
                 f"({diagnostics.curled_fingers}/{diagnostics.visible_fingers})",
                 self._TEXT_COLOR,
             ),
             (
-                "Two-finger history pose: "
+                "Index-only history pose: "
+                f"{'detected' if diagnostics.index_only_hand else 'not detected'}",
+                self._TEXT_COLOR,
+            ),
+            (
+                "Two-finger tab pose: "
                 f"{'detected' if diagnostics.two_finger_hand else 'not detected'}",
                 self._TEXT_COLOR,
             ),
@@ -167,8 +177,8 @@ class Visualizer:
             ),
             (f"Selected pinch ratio: {distance_text}", self._TEXT_COLOR),
             (
-                "Open-hand swipe: tabs | Two-finger swipe: history | "
-                "Pinch: click | Q: quit",
+                "Palm: scroll | 2 fingers: tabs | "
+                "Index: history | Pinch | Q: quit",
                 self._TEXT_COLOR,
             ),
         )

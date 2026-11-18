@@ -8,9 +8,11 @@ The longer-term project may support interactions across applications and the ope
 
 ## First-iteration behavior
 
-The current implementation recognizes thumb-to-index and thumb-to-middle pinches for left/right clicks, horizontal open-hand swipes for next/previous browser tabs, and horizontal two-finger swipes for back/forward browser history. Scrolling and the close-window gesture are temporarily disabled, with their code retained in comments for future reactivation. Cursor movement is not implemented.
+The current implementation recognizes thumb-to-index and thumb-to-middle pinches for left/right clicks, upright open-palm vertical movements for scrolling, horizontal two-finger (index and middle) swipes for switching tabs, and horizontal index-only swipes for back/forward browser history. The close-window gesture is temporarily disabled, with its code retained in comments for future reactivation. Cursor movement is not implemented.
 
-Position the cursor manually before pinching. The pinch/action mapping is an initial implementation, not a finalized gesture vocabulary.
+Each action uses its own hand pose. An earlier version shared the open palm between scrolling (vertical) and tab switching (horizontal); the two were easily confused, so tab switching moved to the two-finger pose.
+
+Position the cursor manually before pinching or scrolling. The pose/action mapping is an initial implementation, not a finalized gesture vocabulary.
 
 ## Recognition backend
 
@@ -20,7 +22,8 @@ The application can also use a compatible YOLO hand-pose checkpoint at `models/h
 
 ## Safety and scope
 
-- Pinches and tab/history swipes send real mouse clicks and keyboard shortcuts; cursor movement is not implemented.
+- Pinches, scrolling, and tab/history swipes send real mouse clicks, wheel input, and keyboard shortcuts to the focused application; cursor movement is not implemented.
+- Cooldowns, pinch arming, and release-before-repeat rules limit accidental or repeated actions.
 - Translation is separated from recognition so click dispatch can be tested independently.
 - Recognition and visualization are kept separate from translation so each can evolve independently.
 - Up to two hands can be displayed, while the initial gesture pipeline evaluates the first detected hand.
