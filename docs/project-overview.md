@@ -8,11 +8,13 @@ The longer-term project may support interactions across applications and the ope
 
 ## First-iteration behavior
 
-The current implementation recognizes thumb-to-index and thumb-to-middle pinches for left/right clicks, upright open-palm vertical movements for scrolling, horizontal two-finger (index and middle) swipes for switching tabs, and horizontal index-only swipes for back/forward browser history. The close-window gesture is temporarily disabled, with its code retained in comments for future reactivation. Cursor movement is not implemented.
+The current implementation recognizes a pinch-ready claw pose for moving the cursor, thumb-to-index and thumb-to-middle pinches for left/right clicks, upright open-palm vertical movements for scrolling, horizontal two-finger (index and middle) swipes for switching tabs, and horizontal index-only swipes for back/forward browser history. The close-window gesture is temporarily disabled, with its code retained in comments for future reactivation.
 
 Each action uses its own hand pose. An earlier version shared the open palm between scrolling (vertical) and tab switching (horizontal); the two were easily confused, so tab switching moved to the two-finger pose.
 
-Position the cursor manually before pinching or scrolling. The pose/action mapping is an initial implementation, not a finalized gesture vocabulary.
+An earlier cursor attempt followed the index fingertip and was reverted: the fingertip jitters, and pinching moved it off the target. The current pointer follows the palm centre with adaptive smoothing and freezes while a pinch forms.
+
+Cursor control is suited to links, buttons, and other normal-sized targets; very small targets remain hard. The pose/action mapping is an initial implementation, not a finalized gesture vocabulary.
 
 ## Recognition backend
 
@@ -22,7 +24,7 @@ The application can also use a compatible YOLO hand-pose checkpoint at `models/h
 
 ## Safety and scope
 
-- Pinches, scrolling, and tab/history swipes send real mouse clicks, wheel input, and keyboard shortcuts to the focused application; cursor movement is not implemented.
+- Cursor movement, pinches, scrolling, and tab/history swipes send real mouse and keyboard input. Moving the physical mouse into a screen corner aborts the app (PyAutoGUI fail-safe).
 - Cooldowns, pinch arming, and release-before-repeat rules limit accidental or repeated actions.
 - Translation is separated from recognition so click dispatch can be tested independently.
 - Recognition and visualization are kept separate from translation so each can evolve independently.

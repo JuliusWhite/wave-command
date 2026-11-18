@@ -44,13 +44,36 @@ The ordering matches MediaPipe Hands:
 
 | Pose | Movement | Gesture state | Action |
 |---|---|---|---|
+| Pinch-ready claw (ring + pinky curled, index + middle relaxed) | Any | `PointerSample` on `GestureResult.pointer` | Cursor movement; pinches click |
 | Upright open palm | Vertical | `SCROLL_UP` / `SCROLL_DOWN` | Mouse wheel |
 | Index + middle extended, ring + pinky curled | Horizontal swipe | `NEXT_TAB` / `PREVIOUS_TAB` | Ctrl+Tab / Ctrl+Shift+Tab |
 | Index only extended | Horizontal swipe | `FORWARD` / `BACK` | Alt+Right / Alt+Left |
 | Thumb tip to index tip | Pinch | `PINCH_LEFT_CLICK` | Left-click |
 | Thumb tip to middle tip | Pinch | `PINCH_RIGHT_CLICK` | Right-click |
 
-Finger poses are judged by the joint angle at each finger's PIP joint (MCP–PIP–tip): at least `150` degrees counts as extended and at most `130` degrees as curled. Each pose owns one action, and the engine checks them in the order open palm, index-only, two-finger. Moving into a different pose resets the movement anchors of the others.
+Finger poses are judged by the joint angle at each finger's PIP joint (MCP–PIP–tip): at least `150` degrees counts as extended and at most `130` degrees as curled. Each pose owns one action. An active pointer session takes priority; otherwise the engine checks the open palm, index-only, and two-finger poses in that order. Moving into a different pose resets the movement anchors of the others.
+
+## Cursor control
+
+### How to operate it
+
+1. **Start pointing.** Hold the pinch-ready claw: curl the ring and pinky into the palm, and let the index and middle relax with a slight bend, thumb loosely to the side (as if about to pick something up). Keep it for `POINTER_ENTER_FRAMES` (5) frames, about 0.2 seconds at 30 FPS. The HUD's *Pointer* line counts `arming 1/5 … 5/5` and then shows `moving cursor`.
+2. **Move.** The cursor follows your palm centre, not a fingertip. Moving your hand to your right moves the cursor right. Movement is relative, like a mouse: slow movement gives about 400 pixels per hand size of travel for precise targeting, and fast movement up to 1600 for crossing the screen.
+3. **Click.** Pinch the thumb to the index tip for a left-click or to the middle tip for a right-click. No open-palm arming is needed while pointing. As soon as either pinch ratio drops below `POINTER_FREEZE_PINCH_RATIO` (0.7), before the click registers, the cursor freezes (HUD: `frozen for click`), so the click lands where you aimed. Open the pinch to resume movement. The usual 1.5-second click cooldown applies.
+4. **Reposition.** While pointing, the cursor stops whenever tracking is lost; bring your hand back to a comfortable spot and carry on. To reach a far edge, move, stop pointing, return your hand, and point again.
+5. **Stop pointing.** Open the ring and pinky (for example into an open palm) for `POINTER_EXIT_FRAMES` (3) frames, or take the hand out of view. Detection gaps shorter than that do not end the session.
+6. **Other gestures.** While pointing, scrolling and tab/history swipes are off, even if the index and middle straighten. Stop pointing first, then use the open palm, two-finger, or index-only pose. Form the two-finger pose from an open palm rather than from a fist, so the fingers do not pass through the claw for five frames.
+
+**Emergency stop:** move the physical mouse into a screen corner. PyAutoGUI's fail-safe stops the app; hand-driven movement keeps one pixel away from the edges, so it never triggers the fail-safe by itself.
+
+### How it works
+
+- The claw pose requires all four fingers visible, ring and pinky curled (at most 130 degrees), index and middle bent more than `POINTER_MIN_FINGER_ANGLE_DEGREES` (100, i.e. not a fist), not both straight (that is the two-finger tab pose), and not the index-only pose.
+- Once started, the session is held by the ring and pinky alone, so pinching or straightening the index cannot end it or trigger a swipe.
+- The engine reports a `PointerSample` (palm centre = mean of the wrist and the four finger MCPs, hand size, and a `frozen` flag) on `GestureResult.pointer`.
+- `PointerController` in `src/translation/pointer_controller.py` smooths the palm position with a One Euro filter (`POINTER_FILTER_*`): strong smoothing at rest, little lag when moving. It converts the filtered motion to hand sizes, applies speed-dependent gain between `POINTER_SLOW_PX_PER_HAND_SIZE` and `POINTER_FAST_PX_PER_HAND_SIZE`, inverts horizontal motion because the camera image is not mirrored (`POINTER_INVERT_X`), and moves the cursor relatively.
+- A frozen or missing sample resets the filter and the anchor, so neither clicking nor repositioning makes the cursor jump.
+- The cursor is limited to the primary display.
 
 ## Pinch rules
 
@@ -62,7 +85,7 @@ index_pinch_ratio = distance(point[4], point[8]) / hand_size
 middle_pinch_ratio = distance(point[4], point[12]) / hand_size
 ```
 
-Each pinch requires the engine to recognize an upright, camera-facing open palm first. The wrist-to-middle-MCP axis must point upward and be close to vertical, and the index-to-pinky MCP span must remain broad enough in the image to indicate a palm facing the camera. The open-hand pose arms pinch input; the next recognized pinch triggers and consumes that activation, so the user must show the upright open palm again before another pinch. Losing the hand also resets the gate. Until armed, pinch poses produce `IDLE`. When an index-tip ratio is at or below `PINCH_THRESHOLD`, the state is `PINCH_LEFT_CLICK`. When a middle-tip ratio is at or below the threshold, the state is `PINCH_RIGHT_CLICK`. If both ratios are within the threshold, the smaller ratio must lead by at least `PINCH_DOMINANCE_MARGIN`; otherwise, the pose is treated as ambiguous and produces `IDLE`. The ratio is based on pixel coordinates, and normalizing by hand size reduces sensitivity to how close the hand is to the camera. A missing hand, a low-confidence required landmark, or an invalid/near-zero reference distance produces `IDLE`.
+Outside a pointer session, each pinch requires the engine to recognize an upright, camera-facing open palm first. The wrist-to-middle-MCP axis must point upward and be close to vertical, and the index-to-pinky MCP span must remain broad enough in the image to indicate a palm facing the camera. The open-hand pose arms pinch input; the next recognized pinch triggers and consumes that activation, so the user must show the upright open palm again before another pinch. Losing the hand also resets the gate. Until armed, pinch poses produce `IDLE`. When an index-tip ratio is at or below `PINCH_THRESHOLD`, the state is `PINCH_LEFT_CLICK`. When a middle-tip ratio is at or below the threshold, the state is `PINCH_RIGHT_CLICK`. If both ratios are within the threshold, the smaller ratio must lead by at least `PINCH_DOMINANCE_MARGIN`; otherwise, the pose is treated as ambiguous and produces `IDLE`. The ratio is based on pixel coordinates, and normalizing by hand size reduces sensitivity to how close the hand is to the camera. A missing hand, a low-confidence required landmark, or an invalid/near-zero reference distance produces `IDLE`.
 
 The close-window gesture and action are temporarily disabled. Their classifier code in `src/recognition/gesture_engine.py` and action mapping/dispatch branch in `src/translation/command_translator.py` are commented out; related tests are skipped so they can be restored later.
 
@@ -86,7 +109,7 @@ History navigation uses wrist landmark 0 and a swipe-distance ratio. The pose re
 
 ## Tuning with the HUD
 
-The HUD shows the gesture and raw classifier state, whether pinches are armed, per-finger curl ratios (index/middle/ring/pinky), whether the index-only and two-finger poses are detected, and both pinch ratios. Use these values when tuning gesture rules against real webcam poses.
+The HUD shows the gesture and raw classifier state, the pointer state (off, arming, moving, or frozen), whether pinches are armed, per-finger curl ratios (index/middle/ring/pinky), whether the index-only and two-finger poses are detected, and both pinch ratios. Use these values when tuning gesture rules against real webcam poses.
 
 Defaults are centralized in `src/config.py`:
 
@@ -101,6 +124,13 @@ Defaults are centralized in `src/config.py`:
 - `HISTORY_SWIPE_DISTANCE_RATIO = 1.25`
 - `TAB_SWIPE_DISTANCE_RATIO = 1.25`
 - `TAB_SWITCH_COOLDOWN_SEC = 1.0` (navigation cooldown)
+- `POINTER_ENTER_FRAMES = 5`, `POINTER_EXIT_FRAMES = 3`
+- `POINTER_MIN_FINGER_ANGLE_DEGREES = 100.0`
+- `POINTER_FREEZE_PINCH_RATIO = 0.7`
+- `POINTER_FILTER_MIN_CUTOFF_HZ = 1.0`, `POINTER_FILTER_BETA = 0.02`, `POINTER_FILTER_DERIVATIVE_CUTOFF_HZ = 1.0`
+- `POINTER_SLOW_PX_PER_HAND_SIZE = 400.0`, `POINTER_FAST_PX_PER_HAND_SIZE = 1600.0`
+- `POINTER_ACCEL_START_SPEED = 0.5`, `POINTER_ACCEL_FULL_SPEED = 3.0` (hand sizes per second)
+- `POINTER_INVERT_X = True`
 - `COMMAND_COOLDOWN_SEC = 1.5`
 - `HUD_ALERT_DURATION_SEC = 2.5`
 - `CAMERA_ID = 0`

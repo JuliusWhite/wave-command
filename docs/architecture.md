@@ -2,7 +2,7 @@
 
 ## Goals and safety boundary
 
-Wave Command separates hand recognition, gesture interpretation, action mapping, and webcam visualization. Thumb-to-index and thumb-to-middle pinches trigger left and right clicks. Upright open-palm vertical movements scroll; index-and-middle (two-finger) wrist swipes switch tabs; index-only wrist swipes navigate back/forward in browser history. Each pose owns a single action, so the gestures cannot trigger each other. Close-window gestures are temporarily disabled. Cursor movement is not implemented.
+Wave Command separates hand recognition, gesture interpretation, action mapping, and webcam visualization. Thumb-to-index and thumb-to-middle pinches trigger left and right clicks. A pinch-ready claw pose moves the cursor, and pinches from it click; upright open-palm vertical movements scroll; index-and-middle (two-finger) wrist swipes switch tabs; index-only wrist swipes navigate back/forward in browser history. Each pose owns a single action, so the gestures cannot trigger each other. Close-window gestures are temporarily disabled.
 
 The action mappings are `PINCH_LEFT_CLICK` → `LEFT_CLICK`, `PINCH_RIGHT_CLICK` → `RIGHT_CLICK`, `NEXT_TAB` → Ctrl+Tab, `PREVIOUS_TAB` → Ctrl+Shift+Tab, `BACK` → Alt+Left, and `FORWARD` → Alt+Right. Browser interactions are the first-iteration focus; the project direction remains broader computer interaction.
 
@@ -15,7 +15,8 @@ The action mappings are `PINCH_LEFT_CLICK` → `LEFT_CLICK`, `PINCH_RIGHT_CLICK`
 - Otherwise, MediaPipe Hands supplies the same 21-point layout. Up to two hands can be detected and drawn.
 - Each `Keypoint` contains its integer `id`, pixel coordinates `x` and `y`, confidence `conf`, and normalized image coordinates `normalized_x` and `normalized_y`.
 - `src/recognition/gesture_engine.py` evaluates geometry only; it has no camera, model, or OS-control responsibilities.
-- `GestureEngine.evaluate()` checks the poses in a fixed order: upright open palm (scroll), then index-only (history), then index-and-middle (tabs). Each pose drives only its own action and resets the trackers of the others, so the gestures cannot trigger one another.
+- An active pointer session (claw pose held for `POINTER_ENTER_FRAMES`, kept while the ring and pinky stay curled) takes priority: it reports the palm centre as a `PointerSample` on `GestureResult.pointer`, lets pinches click without open-palm arming, freezes the sample while a pinch forms, and disables scrolling and swipes.
+- Otherwise, `GestureEngine.evaluate()` checks the poses in a fixed order: upright open palm (scroll), then index-only (history), then index-and-middle (tabs). Each pose drives only its own action and resets the trackers of the others, so the gestures cannot trigger one another.
 - History swipes require the index finger extended and the middle, ring, and pinky curled; the thumb pose does not matter. Right-to-left emits `BACK` (Alt+Left), and left-to-right emits `FORWARD` (Alt+Right).
 - Scrolling uses the upright open palm's vertical velocity, normalized by hand size and time, and begins only after the wrist moves `SCROLL_START_DISTANCE_RATIO` hand sizes from its starting position. A dead zone filters small movements, an exponential moving average smooths velocity, and fractional wheel deltas are accumulated into small integer steps. Upward hand movement scrolls down; downward movement scrolls up. Horizontal-dominant movement does not scroll.
 - Tab swipes require the index and middle fingers extended and the ring and pinky curled, with no active pinch; the thumb pose does not matter. Once the wrist travels `TAB_SWIPE_DISTANCE_RATIO` hand sizes, right-to-left emits `PREVIOUS_TAB` (Ctrl+Shift+Tab) and left-to-right emits `NEXT_TAB` (Ctrl+Tab). The pose must then be released before another switch, so the return stroke cannot switch back.
@@ -25,13 +26,15 @@ The action mappings are `PINCH_LEFT_CLICK` → `LEFT_CLICK`, `PINCH_RIGHT_CLICK`
 
 `src/translation/command_translator.py` maps pinch states to mouse buttons, scroll states to mouse-wheel input, and swipe states to browser navigation shortcuts. The translator acts only on a transition into a gesture, so holding a pose does not repeatedly trigger an action. Pinch clicks are suppressed until `COMMAND_COOLDOWN_SEC` (1.5 seconds) has elapsed; navigation actions share a 1-second cooldown (`TAB_SWITCH_COOLDOWN_SEC`), and every non-scroll action is also suppressed for that interval after a tab switch. Scroll steps are sent on every frame with a non-zero wheel amount, but the action message is emitted only when scrolling starts or changes direction. Runtime input uses PyAutoGUI with its per-call `PAUSE` set to zero, so dispatching input does not stall the camera loop.
 
+`src/translation/pointer_controller.py` turns `PointerSample` values into cursor motion: a One Euro filter on the palm position, hand-size-normalized relative movement with speed-dependent acceleration, horizontal inversion for the unmirrored camera, and a one-pixel margin from the screen edges so PyAutoGUI's corner fail-safe stays reserved for the physical mouse. Frozen or missing samples reset the anchor, so clicks and repositioning never make the cursor jump.
+
 ### Webcam and visualization service
 
-`src/webcam/visualizer.py` owns the OpenCV camera lifecycle, calls a supplied frame-processing function, draws all landmarks and skeleton connections, and renders the HUD. The thumb-to-finger line changes color when either pinch is recognized. The HUD shows the backend, FPS, the gesture and raw classifier state, the close-gesture filter state, whether pinches are armed, finger-curl ratios, whether the index-only history pose and the two-finger tab pose are detected, both pinch ratios, the selected pinch ratio, a controls summary, and the most recent action alert. Press **Q** to exit.
+`src/webcam/visualizer.py` owns the OpenCV camera lifecycle, calls a supplied frame-processing function, draws all landmarks and skeleton connections, and renders the HUD. The thumb-to-finger line changes color when either pinch is recognized. The HUD shows the backend, FPS, the gesture and raw classifier state, the close-gesture filter state, the pointer state, whether pinches are armed, finger-curl ratios, whether the index-only history pose and the two-finger tab pose are detected, both pinch ratios, the selected pinch ratio, a controls summary, and the most recent action alert. Press **Q** to exit.
 
 ### Application entry point
 
-`main.py` wires the services together. For each frame, it requests detections, evaluates the first detected hand (or `IDLE` if none), passes the state to the translator, and returns a `FrameState` to the visualizer. The detector is closed even when the camera loop exits with an error.
+`main.py` wires the services together. For each frame, it requests detections, evaluates the first detected hand (or `IDLE` if none), passes the pointer sample to `PointerController` and the gesture state to the translator, and returns a `FrameState` to the visualizer. The detector is closed even when the camera loop exits with an error.
 
 ### Setup script
 
@@ -47,8 +50,9 @@ HandDetector.detect(frame)
         |  list[HandPrediction], each with 21 Keypoint values
         v
 GestureEngine.evaluate(first hand or None)
-        |  GestureResult(state, pinch_distance_ratio, scroll_amount)
+        |  GestureResult(state, pinch_distance_ratio, scroll_amount, pointer)
         v
+PointerController.update(pointer)    -> relative cursor movement
 CommandTranslator.process(state, scroll_amount)
         |  mouse click, wheel step, or keyboard shortcut, and action message
         v

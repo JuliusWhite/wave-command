@@ -1,6 +1,8 @@
 import unittest
 
 from src.config import (
+    POINTER_ENTER_FRAMES,
+    POINTER_EXIT_FRAMES,
     SCROLL_MAX_HAND_SIZES_PER_SEC,
     SCROLL_UNITS_PER_HAND_SIZE_PER_SEC,
 )
@@ -121,6 +123,37 @@ def make_index_middle_hand(
             tip_index, mcp.x, mcp.y - 10.0, 1.0, 0.5, 0.5
         )
     return HandPrediction(tuple(points), hand.confidence)
+
+
+def make_pointer_hand(
+    wrist_y: float = 300.0,
+    wrist_x: float = 100.0,
+) -> HandPrediction:
+    """Pinch-ready claw: ring and pinky curled, index and middle bent ~135°."""
+    hand = make_open_hand(wrist_y, wrist_x)
+    points = list(hand.keypoints)
+    for mcp_index, tip_index in ((13, 16), (17, 20)):
+        mcp = points[mcp_index]
+        points[tip_index] = Keypoint(
+            tip_index, mcp.x, mcp.y - 10.0, 1.0, 0.5, 0.5
+        )
+    for pip_index, tip_index in ((6, 8), (10, 12)):
+        pip = points[pip_index]
+        points[tip_index] = Keypoint(
+            tip_index, pip.x + 25.0, pip.y - 25.0, 1.0, 0.5, 0.5
+        )
+    return HandPrediction(tuple(points), hand.confidence)
+
+
+def with_thumb_at(hand: HandPrediction, x: float, y: float) -> HandPrediction:
+    points = list(hand.keypoints)
+    points[4] = Keypoint(4, x, y, 1.0, 0.5, 0.5)
+    return HandPrediction(tuple(points), hand.confidence)
+
+
+def start_pointer(engine: GestureEngine, wrist_x: float = 100.0) -> None:
+    for _ in range(POINTER_ENTER_FRAMES):
+        engine.evaluate(make_pointer_hand(wrist_x=wrist_x))
 
 
 def make_index_only_hand_with_right_pinch(
@@ -760,6 +793,137 @@ class GestureEngineTests(unittest.TestCase):
         result = engine.evaluate(HandPrediction(tuple(points), hand.confidence))
 
         self.assertEqual(result.gesture, GestureState.PINCH_LEFT_CLICK)
+
+    def test_pointer_pose_is_distinct_from_other_poses(self) -> None:
+        engine = GestureEngine()
+        for hand, expected in (
+            (make_pointer_hand(), True),
+            (make_open_hand(300.0), False),
+            (make_index_only_hand(300.0), False),
+            (make_index_middle_hand(300.0), False),
+        ):
+            engine.evaluate(hand)
+            self.assertEqual(engine.diagnostics.pointer_pose, expected)
+
+    def test_pointer_starts_only_after_pose_is_held(self) -> None:
+        engine = GestureEngine()
+
+        for frame in range(1, POINTER_ENTER_FRAMES):
+            result = engine.evaluate(make_pointer_hand())
+            self.assertIsNone(result.pointer)
+            self.assertEqual(
+                engine.diagnostics.pointer_arming_frames,
+                frame,
+            )
+
+        result = engine.evaluate(make_pointer_hand())
+        self.assertTrue(engine.diagnostics.pointer_active)
+        self.assertIsNotNone(result.pointer)
+        self.assertFalse(result.pointer.frozen)
+        self.assertEqual(result.gesture, GestureState.IDLE)
+
+    def test_pointer_sample_follows_palm_centre(self) -> None:
+        engine = GestureEngine()
+        start_pointer(engine)
+
+        first = engine.evaluate(make_pointer_hand(wrist_x=100.0)).pointer
+        moved = engine.evaluate(make_pointer_hand(wrist_x=160.0)).pointer
+
+        self.assertAlmostEqual(moved.x - first.x, 60.0)
+        self.assertAlmostEqual(moved.hand_size, 100.0)
+
+    def test_pointer_pinch_clicks_without_open_palm_arming(self) -> None:
+        engine = GestureEngine()
+        start_pointer(engine)
+        self.assertFalse(engine.diagnostics.pinch_enabled)
+
+        claw = make_pointer_hand()
+        index_tip = claw.keypoints[8]
+        left = engine.evaluate(with_thumb_at(claw, index_tip.x, index_tip.y))
+        self.assertEqual(left.gesture, GestureState.PINCH_LEFT_CLICK)
+        self.assertTrue(left.pointer.frozen)
+
+        self.assertEqual(
+            engine.evaluate(make_pointer_hand()).gesture,
+            GestureState.IDLE,
+        )
+        middle_tip = claw.keypoints[12]
+        right = engine.evaluate(
+            with_thumb_at(claw, middle_tip.x + 5.0, middle_tip.y)
+        )
+        self.assertEqual(right.gesture, GestureState.PINCH_RIGHT_CLICK)
+
+    def test_pointer_freezes_while_pinch_is_forming(self) -> None:
+        engine = GestureEngine()
+        start_pointer(engine)
+        claw = make_pointer_hand()
+        index_tip = claw.keypoints[8]
+
+        # Thumb 0.6 hand sizes from the index tip: not a click yet, frozen.
+        result = engine.evaluate(
+            with_thumb_at(claw, index_tip.x - 60.0, index_tip.y)
+        )
+
+        self.assertEqual(result.gesture, GestureState.IDLE)
+        self.assertTrue(result.pointer.frozen)
+        self.assertTrue(engine.diagnostics.pointer_frozen)
+        self.assertFalse(engine.evaluate(claw).pointer.frozen)
+
+    def test_pointer_session_ignores_swipe_poses_and_scrolling(self) -> None:
+        engine = GestureEngine()
+        start_pointer(engine, wrist_x=200.0)
+
+        for wrist_x in (150.0, 100.0, 50.0, 0.0):
+            result = engine.evaluate(
+                make_index_middle_hand(300.0, wrist_x=wrist_x)
+            )
+            self.assertEqual(result.gesture, GestureState.IDLE)
+            self.assertIsNotNone(result.pointer)
+        for wrist_x in (50.0, 100.0, 150.0, 200.0):
+            result = engine.evaluate(
+                make_index_only_hand(300.0, wrist_x=wrist_x)
+            )
+            self.assertEqual(result.gesture, GestureState.IDLE)
+
+    def test_pointer_ends_when_ring_and_pinky_open(self) -> None:
+        current_time = [0.0]
+        engine = GestureEngine(clock=lambda: current_time[0])
+        start_pointer(engine)
+
+        # Brief loss is tolerated: the session survives a short gap.
+        for _ in range(POINTER_EXIT_FRAMES - 1):
+            result = engine.evaluate(None)
+            self.assertIsNone(result.pointer)
+            self.assertTrue(engine.diagnostics.pointer_active)
+        engine.evaluate(make_pointer_hand())
+        self.assertTrue(engine.diagnostics.pointer_active)
+
+        for _ in range(POINTER_EXIT_FRAMES):
+            engine.evaluate(make_open_hand(300.0))
+        self.assertFalse(engine.diagnostics.pointer_active)
+
+        # Back in normal mode, the open palm scrolls again.
+        engine.evaluate(make_open_hand(300.0))
+        current_time[0] += 0.05
+        engine.evaluate(make_open_hand(290.0))
+        current_time[0] += 0.05
+        self.assertEqual(
+            engine.evaluate(make_open_hand(280.0)).gesture,
+            GestureState.SCROLL_DOWN,
+        )
+
+    def test_brief_pointer_like_transition_does_not_start_pointer(self) -> None:
+        engine = GestureEngine()
+
+        for _ in range(POINTER_ENTER_FRAMES - 1):
+            engine.evaluate(make_pointer_hand(wrist_x=200.0))
+        engine.evaluate(make_index_middle_hand(300.0, wrist_x=200.0))
+
+        self.assertFalse(engine.diagnostics.pointer_active)
+        self.assertEqual(
+            engine.evaluate(make_index_middle_hand(300.0, wrist_x=0.0)).gesture,
+            GestureState.PREVIOUS_TAB,
+        )
 
     def test_low_confidence_fist_landmark_does_not_block_pinch(self) -> None:
         hand = make_hand(100, 120)

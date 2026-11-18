@@ -31,7 +31,7 @@ The script creates `models/`, initializes MediaPipe Hands to verify its API is a
 python main.py
 ```
 
-`main()` creates a `HandDetector`, `GestureEngine`, `CommandTranslator`, and `Visualizer`. The visualizer opens the configured camera (`CAMERA_ID`, initially `0`) and passes each captured BGR frame to the application callback.
+`main()` creates a `HandDetector`, `GestureEngine`, `CommandTranslator`, `PointerController`, and `Visualizer`. The visualizer opens the configured camera (`CAMERA_ID`, initially `0`) and passes each captured BGR frame to the application callback.
 
 ## 3. Per-frame runtime flow
 
@@ -41,10 +41,11 @@ python main.py
    - Otherwise, the detector selects MediaPipe Hands.
    - If YOLO inference returns a pose shape other than 21 keypoints, the detector switches to MediaPipe.
 3. **Evaluate:** `main.py` gives the first detected hand (or `None`) to `GestureEngine.evaluate()`.
-4. **Recognize:** The engine checks landmark confidence, calculates pinch and finger-curl ratios, classifies a left/right pinch or idle hand, and detects vertical wrist movement with an upright open hand for scrolling, horizontal movement with the index and middle fingers extended for tab switching, or horizontal movement with only the index finger extended for history navigation. Similar simultaneous pinch ratios are ignored as ambiguous.
-5. **Translate:** `CommandTranslator.process(gesture, scroll_amount)` dispatches left/right mouse clicks on new pinch transitions, subject to the 1.5-second cooldown; mouse-wheel steps for open-palm vertical movement; Ctrl+Tab/Ctrl+Shift+Tab for two-finger swipes; or Alt+Left/Alt+Right for index-only swipes. Navigation shortcuts share a 1-second cooldown, and a tab switch also pauses clicks and history for that second. Input is issued by PyAutoGUI with its per-call pause disabled; errors are allowed to surface rather than being reported as success.
-6. **Visualize:** The callback returns a `FrameState`. The visualizer draws all detected hands, bones, pinch-tip line, state, gesture diagnostics, FPS, and a temporary alert in the camera window.
-7. **Exit:** Press **Q** while the video window is focused. Camera/window resources are released in `finally` blocks.
+4. **Recognize:** The engine checks landmark confidence, calculates pinch and finger-curl ratios, classifies a left/right pinch or idle hand, tracks the palm centre while the pinch-ready claw pose is held for cursor control, and otherwise detects vertical wrist movement with an upright open hand for scrolling, horizontal movement with the index and middle fingers extended for tab switching, or horizontal movement with only the index finger extended for history navigation. Similar simultaneous pinch ratios are ignored as ambiguous.
+5. **Point:** `PointerController.update()` smooths the palm position and moves the cursor relatively; it holds still while a pinch forms or when no sample is reported.
+6. **Translate:** `CommandTranslator.process(gesture, scroll_amount)` dispatches left/right mouse clicks on new pinch transitions, subject to the 1.5-second cooldown; mouse-wheel steps for open-palm vertical movement; Ctrl+Tab/Ctrl+Shift+Tab for two-finger swipes; or Alt+Left/Alt+Right for index-only swipes. Navigation shortcuts share a 1-second cooldown, and a tab switch also pauses clicks and history for that second. Input is issued by PyAutoGUI with its per-call pause disabled; errors are allowed to surface rather than being reported as success.
+7. **Visualize:** The callback returns a `FrameState`. The visualizer draws all detected hands, bones, pinch-tip line, state, gesture diagnostics, FPS, and a temporary alert in the camera window.
+8. **Exit:** Press **Q** while the video window is focused. Camera/window resources are released in `finally` blocks.
 
 ```text
 Camera frame
@@ -53,17 +54,17 @@ Camera frame
   -> GestureEngine
   -> IDLE, PINCH_LEFT_CLICK, PINCH_RIGHT_CLICK, SCROLL_UP/DOWN,
      NEXT_TAB/PREVIOUS_TAB, BACK, or FORWARD
-  -> CommandTranslator
-  -> OS mouse clicks, wheel input, tab/history shortcuts, and action alert
+  -> PointerController (cursor) and CommandTranslator
+  -> OS cursor movement, mouse clicks, wheel input, tab/history shortcuts, and action alert
   -> Visualizer HUD
 ```
 
 ## Output and controls
 
 - Terminal: a message identifying the executed click, scroll, tab, or history action.
-- Video window: hand skeleton, colored finger bones, gesture and raw state, pinch gate, detected swipe poses, curl and pinch ratios, FPS, and alert.
+- Video window: hand skeleton, colored finger bones, gesture and raw state, pointer state, pinch gate, detected swipe poses, curl and pinch ratios, FPS, and alert.
 - Keyboard: index-only swipes send Alt+Left or Alt+Right to navigate history; two-finger swipes send Ctrl+Tab or Ctrl+Shift+Tab; **Q** exits the visualizer when its window is focused.
-- Mouse: pinches click and open-palm vertical movements scroll at the current cursor position; cursor movement is not implemented.
+- Mouse: the claw pose moves the cursor; pinches click and open-palm vertical movements scroll at the current cursor position. Moving the physical mouse into a screen corner triggers PyAutoGUI's fail-safe and stops the app.
 
 ## Model files
 

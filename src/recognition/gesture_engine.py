@@ -13,6 +13,10 @@ from ..config import (
     CONFIDENCE_THRESHOLD,
     PINCH_DOMINANCE_MARGIN,
     PINCH_THRESHOLD,
+    POINTER_ENTER_FRAMES,
+    POINTER_EXIT_FRAMES,
+    POINTER_FREEZE_PINCH_RATIO,
+    POINTER_MIN_FINGER_ANGLE_DEGREES,
     SCROLL_DEAD_ZONE_RATIO_PER_SEC,
     SCROLL_MAX_HAND_SIZES_PER_SEC,
     SCROLL_SMOOTHING_ALPHA,
@@ -63,9 +67,26 @@ class GestureDiagnostics:
     pinch_enabled: bool = False
     index_only_hand: bool = False
     two_finger_hand: bool = False
+    ring_pinky_curled: bool = False
+    pointer_pose: bool = False
+    pointer_arming_frames: int = 0
+    pointer_active: bool = False
+    pointer_frozen: bool = False
+    palm_x: float | None = None
+    palm_y: float | None = None
     wrist_x: float | None = None
     wrist_y: float | None = None
     hand_size: float | None = None
+
+
+@dataclass(frozen=True)
+class PointerSample:
+    """Palm position for cursor control, in camera-image pixels."""
+
+    x: float
+    y: float
+    hand_size: float
+    frozen: bool
 
 
 @dataclass(frozen=True)
@@ -73,6 +94,7 @@ class GestureResult:
     gesture: GestureState
     pinch_distance_ratio: float | None
     scroll_amount: int = 0
+    pointer: PointerSample | None = None
 
 
 class GestureEngine:
@@ -108,6 +130,10 @@ class GestureEngine:
         self._tab_swipe_origin_x: float | None = None
         self._tab_swipe_origin_size: float | None = None
         self._tab_swipe_waiting_for_release = False
+        self._pointer_active = False
+        self._pointer_arming_frames = 0
+        self._pointer_exit_frames = 0
+        self._pointer_sample: PointerSample | None = None
         self._diagnostics = GestureDiagnostics()
 
     @property
@@ -123,15 +149,66 @@ class GestureEngine:
         )
 
     def evaluate(self, hand: HandPrediction | None) -> GestureResult:
-        """Classify pinches, open-palm scrolling, and two swipe gestures.
+        """Classify pointing, pinches, scrolling, and two swipe gestures.
 
-        Each pose owns one action: the open palm scrolls, an index-only hand
-        navigates history, and an index-and-middle hand switches tabs.
+        Each pose owns one action: the pinch-ready pointer pose moves the
+        cursor, the open palm scrolls, an index-only hand navigates history,
+        and an index-and-middle hand switches tabs.
         """
+        result = self._evaluate(hand)
+        return replace(result, pointer=self._pointer_sample)
+
+    def _evaluate(self, hand: HandPrediction | None) -> GestureResult:
         result, diagnostics = self._classify(hand)
         scroll_amount = 0
+        self._pointer_sample = None
+        pointer_session = self._update_pointer_session(diagnostics)
+        pointer_frozen = False
 
-        if (
+        if pointer_session:
+            # While pointing, swipes and scrolling are off and pinches click
+            # directly, without the open-palm arming used elsewhere.
+            self._reset_scroll_tracking()
+            self._reset_history_swipe()
+            self._reset_tab_swipe()
+            pinch_detected = result.gesture in {
+                GestureState.PINCH_LEFT_CLICK,
+                GestureState.PINCH_RIGHT_CLICK,
+            }
+            tracking = (
+                diagnostics.ring_pinky_curled
+                and diagnostics.palm_x is not None
+                and diagnostics.palm_y is not None
+                and diagnostics.hand_size is not None
+            )
+            if tracking:
+                pinch_ratios = [
+                    ratio
+                    for ratio in (
+                        diagnostics.left_pinch_ratio,
+                        diagnostics.right_pinch_ratio,
+                    )
+                    if ratio is not None
+                ]
+                # Freeze while a pinch is forming so the click lands where
+                # the user was pointing.
+                pointer_frozen = pinch_detected or (
+                    bool(pinch_ratios)
+                    and min(pinch_ratios) < POINTER_FREEZE_PINCH_RATIO
+                )
+                self._pointer_sample = PointerSample(
+                    diagnostics.palm_x,
+                    diagnostics.palm_y,
+                    diagnostics.hand_size,
+                    pointer_frozen,
+                )
+            if not (tracking and pinch_detected):
+                result = GestureResult(
+                    GestureState.IDLE,
+                    result.pinch_distance_ratio,
+                )
+            diagnostics = replace(diagnostics, raw_gesture=result.gesture)
+        elif (
             diagnostics.open_hand
             and diagnostics.wrist_x is not None
             and diagnostics.wrist_y is not None
@@ -208,28 +285,32 @@ class GestureEngine:
             self._reset_history_swipe()
             self._reset_tab_swipe()
 
-        if self._pinch_waiting_for_open_hand_release:
-            if not diagnostics.open_hand:
-                self._pinch_waiting_for_open_hand_release = False
-        elif diagnostics.open_hand:
-            self._pinch_enabled = True
-        elif hand is None:
-            self._pinch_enabled = False
+        if not pointer_session:
+            if self._pinch_waiting_for_open_hand_release:
+                if not diagnostics.open_hand:
+                    self._pinch_waiting_for_open_hand_release = False
+            elif diagnostics.open_hand:
+                self._pinch_enabled = True
+            elif hand is None:
+                self._pinch_enabled = False
 
-        pinch_detected = result.gesture in {
-            GestureState.PINCH_LEFT_CLICK,
-            GestureState.PINCH_RIGHT_CLICK,
-        }
-        if not self._pinch_enabled and pinch_detected:
-            result = GestureResult(
-                GestureState.IDLE,
-                result.pinch_distance_ratio,
-            )
-        elif pinch_detected:
-            self._pinch_enabled = False
+            pinch_detected = result.gesture in {
+                GestureState.PINCH_LEFT_CLICK,
+                GestureState.PINCH_RIGHT_CLICK,
+            }
+            if not self._pinch_enabled and pinch_detected:
+                result = GestureResult(
+                    GestureState.IDLE,
+                    result.pinch_distance_ratio,
+                )
+            elif pinch_detected:
+                self._pinch_enabled = False
         diagnostics = replace(
             diagnostics,
             pinch_enabled=self._pinch_enabled,
+            pointer_arming_frames=self._pointer_arming_frames,
+            pointer_active=pointer_session,
+            pointer_frozen=pointer_frozen,
         )
         self._diagnostics = diagnostics
 
@@ -276,6 +357,38 @@ class GestureEngine:
         self._fist_candidate_frames = 0
         self._stable_gesture = result.gesture
         return result
+
+    def _update_pointer_session(self, diagnostics: GestureDiagnostics) -> bool:
+        """Start, keep, or end the pointer session for this frame.
+
+        The pointer pose must be held for ``POINTER_ENTER_FRAMES`` so that
+        passing through it (for example while forming another pose) does not
+        start pointing. Once started, the session lasts while the ring and
+        pinky stay curled, so pinching or straightening the index finger does
+        not end it. ``POINTER_EXIT_FRAMES`` tolerates brief detection loss.
+        """
+        if self._pointer_active:
+            if diagnostics.ring_pinky_curled:
+                self._pointer_exit_frames = 0
+                return True
+            self._pointer_exit_frames += 1
+            if self._pointer_exit_frames < POINTER_EXIT_FRAMES:
+                return True
+            self._pointer_active = False
+            self._pointer_exit_frames = 0
+            self._pointer_arming_frames = 0
+            return False
+
+        if diagnostics.pointer_pose:
+            self._pointer_arming_frames += 1
+            if self._pointer_arming_frames >= POINTER_ENTER_FRAMES:
+                self._pointer_active = True
+                self._pointer_arming_frames = 0
+                self._pointer_exit_frames = 0
+                return True
+        else:
+            self._pointer_arming_frames = 0
+        return False
 
     def _scroll_from_open_hand(
         self,
@@ -619,6 +732,36 @@ class GestureEngine:
             )
         )
 
+        ring_pinky_curled = (
+            visible_fingers == len(finger_tips)
+            and finger_angles[2] is not None
+            and finger_angles[2] <= FINGER_CURLED_ANGLE_DEGREES
+            and finger_angles[3] is not None
+            and finger_angles[3] <= FINGER_CURLED_ANGLE_DEGREES
+        )
+        # Pinch-ready pose: ring and pinky curled, index and middle relaxed
+        # (bent, but not curled into a fist and not both straight, which is
+        # the two-finger tab pose).
+        pointer_pose = (
+            ring_pinky_curled
+            and finger_angles[0] is not None
+            and finger_angles[1] is not None
+            and finger_angles[0] > POINTER_MIN_FINGER_ANGLE_DEGREES
+            and finger_angles[1] > POINTER_MIN_FINGER_ANGLE_DEGREES
+            and not (
+                finger_angles[0] >= FINGER_EXTENDED_ANGLE_DEGREES
+                and finger_angles[1] >= FINGER_EXTENDED_ANGLE_DEGREES
+            )
+            and not index_only_hand
+        )
+        palm_x = palm_y = None
+        if visible_fingers == len(finger_tips):
+            palm_points = [wrist] + [
+                hand.keypoints[index] for index in finger_mcps
+            ]
+            palm_x = sum(point.x for point in palm_points) / len(palm_points)
+            palm_y = sum(point.y for point in palm_points) / len(palm_points)
+
         pinch_ratios = []
         if (
             left_pinch_ratio is not None
@@ -684,6 +827,10 @@ class GestureEngine:
             open_hand=open_hand,
             index_only_hand=index_only_hand,
             two_finger_hand=two_finger_hand,
+            ring_pinky_curled=ring_pinky_curled,
+            pointer_pose=pointer_pose,
+            palm_x=palm_x,
+            palm_y=palm_y,
             wrist_x=wrist.x,
             wrist_y=wrist.y,
             hand_size=hand_size,

@@ -39,13 +39,35 @@ class VisualizerTests(unittest.TestCase):
         self.assertIn("Pinch gate: armed", text_lines)
         self.assertIn("Index-only history pose: not detected", text_lines)
         self.assertIn("Two-finger tab pose: detected", text_lines)
+        self.assertIn("Pointer: off (show claw pose)", text_lines)
         self.assertIn(
-            "Palm: scroll | 2 fingers: tabs | "
-            "Index: history | Pinch | Q: quit",
+            "Claw: cursor | Palm: scroll | 2 fingers: tabs | "
+            "Index: history | Q: quit",
             text_lines,
         )
         self.assertIn("Curl I/M/R/P: 0.80/1.20/--/1.10 (2/4)", text_lines)
         self.assertIn("Pinch L/R: 0.20/0.60 (threshold 0.45)", text_lines)
+
+    def test_hud_reports_pointer_state(self) -> None:
+        for diagnostics, expected in (
+            (GestureDiagnostics(pointer_arming_frames=2), "Pointer: arming 2/5"),
+            (GestureDiagnostics(pointer_active=True), "Pointer: moving cursor"),
+            (
+                GestureDiagnostics(pointer_active=True, pointer_frozen=True),
+                "Pointer: frozen for click",
+            ),
+        ):
+            with self.subTest(expected=expected):
+                cv2 = Mock()
+                state = FrameState([], GestureState.IDLE, None, None, diagnostics)
+
+                with patch.dict(sys.modules, {"cv2": cv2}):
+                    Visualizer()._draw(Mock(shape=(480, 640, 3)), state, 30.0)
+
+                text_lines = [
+                    call.args[1] for call in cv2.putText.call_args_list
+                ]
+                self.assertIn(expected, text_lines)
 
     def test_fist_does_not_stop_the_webcam_loop(self) -> None:
         cv2 = Mock()

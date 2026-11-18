@@ -1,4 +1,4 @@
-"""Wave Command entry point: webcam -> recognition -> mouse actions."""
+"""Wave Command entry point: webcam -> recognition -> mouse and keys."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import time
 
 from src.config import HUD_ALERT_DURATION_SEC
 from src.recognition import GestureEngine, HandDetector
-from src.translation import CommandTranslator
+from src.translation import CommandTranslator, PointerController
 from src.webcam import FrameState, Visualizer
 
 
@@ -14,6 +14,7 @@ def main() -> None:
     detector = HandDetector()
     gesture_engine = GestureEngine()
     translator = CommandTranslator()
+    pointer = PointerController()
     last_alert: str | None = None
     last_alert_at = 0.0
     visualizer = Visualizer(backend_name=detector.backend_name)
@@ -24,6 +25,7 @@ def main() -> None:
         hands = detector.detect(frame)
         visualizer.backend_name = detector.backend_name
         gesture_result = gesture_engine.evaluate(hands[0] if hands else None)
+        pointer.update(gesture_result.pointer)
         alert = translator.process(
             gesture_result.gesture,
             scroll_amount=gesture_result.scroll_amount,

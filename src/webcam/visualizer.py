@@ -11,6 +11,7 @@ from ..config import (
     CAMERA_ID,
     HAND_CONNECTIONS,
     PINCH_THRESHOLD,
+    POINTER_ENTER_FRAMES,
     WINDOW_NAME,
 )
 from ..recognition.gesture_engine import (
@@ -45,6 +46,7 @@ class Visualizer:
     _PINCH_COLOR = (80, 230, 80)
     _OPEN_COLOR = (40, 100, 255)
     _TEXT_COLOR = (245, 245, 245)
+    _POINTER_COLOR = (255, 200, 60)
 
     def __init__(self, camera_id: int = CAMERA_ID, backend_name: str = "") -> None:
         self.camera_id = camera_id
@@ -150,6 +152,12 @@ class Visualizer:
             (f"Raw: {diagnostics.raw_gesture.value}", self._TEXT_COLOR),
             (filter_text, self._TEXT_COLOR),
             (
+                f"Pointer: {self._pointer_text(diagnostics)}",
+                self._POINTER_COLOR
+                if diagnostics.pointer_active
+                else self._TEXT_COLOR,
+            ),
+            (
                 "Pinch gate: "
                 f"{'armed' if diagnostics.pinch_enabled else 'show upright palm'}",
                 self._TEXT_COLOR,
@@ -177,8 +185,8 @@ class Visualizer:
             ),
             (f"Selected pinch ratio: {distance_text}", self._TEXT_COLOR),
             (
-                "Palm: scroll | 2 fingers: tabs | "
-                "Index: history | Pinch | Q: quit",
+                "Claw: cursor | Palm: scroll | 2 fingers: tabs | "
+                "Index: history | Q: quit",
                 self._TEXT_COLOR,
             ),
         )
@@ -207,6 +215,21 @@ class Visualizer:
                 2,
                 cv2.LINE_AA,
             )
+
+    @staticmethod
+    def _pointer_text(diagnostics: GestureDiagnostics) -> str:
+        if diagnostics.pointer_active:
+            return (
+                "frozen for click"
+                if diagnostics.pointer_frozen
+                else "moving cursor"
+            )
+        if diagnostics.pointer_arming_frames:
+            return (
+                "arming "
+                f"{diagnostics.pointer_arming_frames}/{POINTER_ENTER_FRAMES}"
+            )
+        return "off (show claw pose)"
 
     def _draw_hand(
         self,
