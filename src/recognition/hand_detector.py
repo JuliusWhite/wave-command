@@ -14,7 +14,12 @@ from ..config import (
 
 @dataclass(frozen=True)
 class Keypoint:
-    """One hand landmark, with pixel and normalized image coordinates."""
+    """One hand landmark, with pixel and normalized image coordinates.
+
+    ``z`` is the estimated depth relative to the wrist, in the same pixel
+    scale as ``x`` (smaller is closer to the camera). MediaPipe provides it;
+    it is ``None`` for backends without depth.
+    """
 
     id: int
     x: float
@@ -22,6 +27,7 @@ class Keypoint:
     conf: float
     normalized_x: float
     normalized_y: float
+    z: float | None = None
 
 
 @dataclass(frozen=True)
@@ -115,6 +121,8 @@ class HandDetector:
                     conf=confidence,
                     normalized_x=landmark.x,
                     normalized_y=landmark.y,
+                    # MediaPipe scales z roughly like x (by image width).
+                    z=landmark.z * width,
                 )
                 for index, landmark in enumerate(hand_landmarks.landmark)
             )

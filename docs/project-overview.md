@@ -25,7 +25,7 @@ The application can also use a compatible YOLO hand-pose checkpoint at `models/h
 ## Safety and scope
 
 - Cursor movement, pinches, scrolling, and tab/history swipes send real mouse and keyboard input. Moving the physical mouse into a screen corner aborts the app (PyAutoGUI fail-safe).
-- Cooldowns, pinch arming, and release-before-repeat rules limit accidental or repeated actions.
+- Cooldowns, pinch arming and confirmation, a pose stabilizer, and return-stroke lockouts limit accidental, confused, or repeated actions.
 - Translation is separated from recognition so click dispatch can be tested independently.
 - Recognition and visualization are kept separate from translation so each can evolve independently.
 - Up to two hands can be displayed, while the initial gesture pipeline evaluates the first detected hand.

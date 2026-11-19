@@ -5,3 +5,4 @@ models/*.pt
 models/training/
 /yolo11n-pose.pt
 .session-notes/
+CLAUDE.md

@@ -13,6 +13,21 @@ CONFIDENCE_THRESHOLD = 0.5
 PINCH_THRESHOLD = 0.45
 # Required ratio difference when both pinch targets are within the threshold.
 PINCH_DOMINANCE_MARGIN = 0.08
+# Consecutive frames the same pinch must be seen before it clicks, so a single
+# noisy frame while the hand changes shape never clicks.
+PINCH_CONFIRM_FRAMES = 2
+# Once a pinch clicks it stays held until its ratio opens past this value.
+# The gap to PINCH_THRESHOLD (hysteresis) stops a held pinch from flickering
+# open and closed and clicking twice.
+PINCH_RELEASE_THRESHOLD = 0.6
+# An open palm arms one pinch for this long; stale arming does not linger.
+PINCH_ARM_TIMEOUT_SEC = 3.0
+# Pose stabilizer for the open-palm, index-only, and two-finger poses.
+# A recognized pose survives this many mismatched frames before it ends, so
+# one bad frame does not reset a scroll or swipe in progress.
+POSE_RELEASE_FRAMES = 3
+# Frames another pose must be seen before it takes over from the current one.
+POSE_SWITCH_FRAMES = 2
 # Minimum vertical wrist displacement, normalized by hand size, before scrolling.
 SCROLL_START_DISTANCE_RATIO = 0.15
 # Open-palm scroll velocity is normalized to hand sizes per second.
@@ -24,14 +39,36 @@ SCROLL_MAX_HAND_SIZES_PER_SEC = 2.5
 # swipe that switches the browser tab.
 TAB_SWIPE_DISTANCE_RATIO = 1.25
 HISTORY_SWIPE_DISTANCE_RATIO = 1.25
+# A swipe must cover its distance within this time; slow drift never swipes.
+SWIPE_WINDOW_SEC = 0.8
+# After a swipe, motion in the opposite direction (the hand returning) is
+# ignored for this long, or until the pose is released.
+SWIPE_RETURN_LOCKOUT_SEC = 1.2
 TAB_SWITCH_COOLDOWN_SEC = 1.0
 # Pointer (cursor) control with the pinch-ready pose.
 # Frames the pose must be held before the cursor starts following the palm.
 POINTER_ENTER_FRAMES = 5
+# The palm must stay within this many hand sizes of where arming began; a
+# moving hand (for example a swipe with a bent finger) does not start pointing.
+POINTER_ARM_MAX_DRIFT_RATIO = 0.35
+# Non-claw frames that pause arming instead of restarting it.
+POINTER_ARM_GRACE_FRAMES = 2
 # Frames without curled ring and pinky before pointing ends.
 POINTER_EXIT_FRAMES = 3
 # Index and middle must be bent less than this (not curled into a fist).
 POINTER_MIN_FINGER_ANGLE_DEGREES = 100.0
+# With depth (MediaPipe), the claw is judged by 3D finger flexion: the sum of
+# the PIP and DIP joint bends. A claw bends toward the camera, which looks
+# straight in the flat image, so 2D angles miss it.
+# Average index/middle flexion from which the fingers count as a claw (below
+# it they are straight, as in the two-finger and index-only poses).
+POINTER_CLAW_MIN_FLEX_DEGREES = 35.0
+# Index or middle flexion above this is a fist, not a claw.
+POINTER_CLAW_MAX_FLEX_DEGREES = 150.0
+# Ring or pinky flexion from which the finger counts as curled for pointing.
+POINTER_CURLED_FLEX_DEGREES = 100.0
+# Per-frame weight of the newest flexion value (1.0 = no smoothing).
+POINTER_FLEX_SMOOTHING_ALPHA = 0.5
 # The cursor freezes once a pinch ratio drops below this, before the click.
 POINTER_FREEZE_PINCH_RATIO = 0.7
 # One Euro filter on the palm position (image pixels): lower cutoff means

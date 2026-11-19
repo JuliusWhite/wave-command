@@ -41,11 +41,11 @@ python main.py
    - Otherwise, the detector selects MediaPipe Hands.
    - If YOLO inference returns a pose shape other than 21 keypoints, the detector switches to MediaPipe.
 3. **Evaluate:** `main.py` gives the first detected hand (or `None`) to `GestureEngine.evaluate()`.
-4. **Recognize:** The engine checks landmark confidence, calculates pinch and finger-curl ratios, classifies a left/right pinch or idle hand, tracks the palm centre while the pinch-ready claw pose is held for cursor control, and otherwise detects vertical wrist movement with an upright open hand for scrolling, horizontal movement with the index and middle fingers extended for tab switching, or horizontal movement with only the index finger extended for history navigation. Similar simultaneous pinch ratios are ignored as ambiguous.
+4. **Recognize:** The engine checks landmark confidence, calculates pinch and finger-curl ratios and (with MediaPipe depth) 3D finger flexion, debounces the movement poses with a pose stabilizer, confirms and holds left/right pinches, tracks the palm centre while the pinch-ready claw pose is held for cursor control, and otherwise detects vertical wrist movement with an upright open hand for scrolling, horizontal movement with the index and middle fingers extended for tab switching, or horizontal movement with only the index finger extended for history navigation. Similar simultaneous pinch ratios are ignored as ambiguous.
 5. **Point:** `PointerController.update()` smooths the palm position and moves the cursor relatively; it holds still while a pinch forms or when no sample is reported.
 6. **Translate:** `CommandTranslator.process(gesture, scroll_amount)` dispatches left/right mouse clicks on new pinch transitions, subject to the 1.5-second cooldown; mouse-wheel steps for open-palm vertical movement; Ctrl+Tab/Ctrl+Shift+Tab for two-finger swipes; or Alt+Left/Alt+Right for index-only swipes. Navigation shortcuts share a 1-second cooldown, and a tab switch also pauses clicks and history for that second. Input is issued by PyAutoGUI with its per-call pause disabled; errors are allowed to surface rather than being reported as success.
 7. **Visualize:** The callback returns a `FrameState`. The visualizer draws all detected hands, bones, pinch-tip line, state, gesture diagnostics, FPS, and a temporary alert in the camera window.
-8. **Exit:** Press **Q** while the video window is focused. Camera/window resources are released in `finally` blocks.
+8. **Exit:** Press **Q** while the video window is focused (**D** toggles the detailed HUD). Camera/window resources are released in `finally` blocks.
 
 ```text
 Camera frame

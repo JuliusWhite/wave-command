@@ -20,14 +20,14 @@ Swipe directions are measured in the (unmirrored) camera image: right-to-left me
 - **Cursor:** see [Moving the cursor](#moving-the-cursor) below.
 - **Pinches outside pointing** must be armed by showing an upright open palm first, and each pinch uses up the arming. The pinch threshold is `0.45` times the wrist-to-middle-MCP hand size, so clicks register before the fingertips touch. If both pinch ratios are within the threshold but differ by less than `0.08`, the pose is ambiguous and does not click.
 - **Scrolling** starts after about `0.15` hand sizes of vertical movement. It disarms pinches: release the open palm and present it again before pinching.
-- **Tab switching** fires once per two-finger pose; release the pose before the next switch, so the return stroke does not switch back.
+- **Tab switching** and **history** swipes must be brisk (within 0.8 s). Bringing the hand back is ignored, so the return stroke does not undo the action; swipe the same way again to repeat.
 - **Cooldowns:** clicks 1.5 s; tab and history navigation 1 s. After a tab switch, clicks and history are also paused for 1 s.
 
 Actions are printed to the terminal and shown on the video HUD. Scrolling acts on the window under the cursor. See [docs/recognition-and-gestures.md](docs/recognition-and-gestures.md#cursor-control) for the full pointing walkthrough. The close-window gesture is temporarily disabled. These boundaries do not limit the broader project direction.
 
 ## Moving the cursor
 
-1. **Make the hand shape.** Fold your **ring finger and pinky** down into your palm. Keep your **index and middle fingers** up but **slightly bent**, not straight (straight is the tab-switch "V"). Let the thumb rest loosely to the side, as if about to grab a small ball with three fingers.
+1. **Make the hand shape.** Fold your **ring finger and pinky** down into your palm. Keep your **index and middle fingers** up but **slightly bent**, not straight (straight is the tab-switch "V"). Let the thumb rest loosely to the side, as if about to grab a small ball with three fingers. Keep your palm facing the camera; with MediaPipe, the engine uses landmark depth to see the fingers bending toward the camera.
 
    ```text
       index  middle
@@ -36,15 +36,15 @@ Actions are printed to the terminal and shown on the video HUD. Scrolling acts o
      thumb  [ring + pinky folded down]
    ```
 
-2. **Hold it still for a moment** (5 frames, about 0.2 seconds) facing the camera. The **Pointer** line in the video window counts `arming 1/5 … 5/5`, then shows `moving cursor`.
+2. **Hold it still for a moment** (5 frames, about 0.2 seconds) facing the camera. The video window shows `CURSOR` with `hold still... 1/5 … 5/5`, then `pinch thumb + index/middle to click`.
 3. **Move your whole hand**, keeping the shape. The cursor follows the centre of your palm, like sliding a mouse on a desk: hand right moves the cursor right, hand up moves it up. Slow movement gives small, precise steps; quick movement crosses the screen.
-4. **Click** by touching your thumb to the index fingertip (left-click) or the middle fingertip (right-click). No open palm is needed first. The cursor freezes just before the click (`frozen for click`), so it clicks where you aimed.
+4. **Click** by touching your thumb to the index fingertip (left-click) or the middle fingertip (right-click) for a moment. No open palm is needed first. The cursor freezes just before the click (`frozen - finish the pinch to click`), so it clicks where you aimed. Open the fingers clearly before the next click; one pinch is one click.
 5. **Reposition** like lifting a mouse: drop the hand out of view, bring it back somewhere comfortable, and point again. The cursor does not jump.
 6. **Stop** by opening your hand. The cursor stays where it is, and the other gestures work again. Scrolling and swipes are off while pointing.
 
 **Emergency stop:** move the physical mouse into any screen corner; PyAutoGUI's fail-safe stops the app.
 
-If the cursor does not move, check the **Pointer** line: `off` means the shape is not recognized (curl the ring and pinky further), `arming` that never completes means the shape is unsteady, and `frozen for click` means the thumb is too close to a fingertip. See [Development and testing](docs/development-and-testing.md#the-cursor-does-not-move) for tuning.
+If the cursor does not move, press **D** for the detailed view and check the **Pointer** and **Flex 3D** lines: `off` means the shape is not recognized (compare the index and middle flex values with the claw band, and curl the ring and pinky further), `arming` that never completes means the hand is moving or the shape is unsteady, and `frozen for click` means the thumb is too close to a fingertip. See [Development and testing](docs/development-and-testing.md#the-cursor-does-not-move) for tuning.
 
 ## Requirements
 
@@ -81,7 +81,7 @@ python scripts/setup_models.py
 python main.py
 ```
 
-Allow webcam access if prompted. The live view displays hand landmarks, skeletal connections, the current and raw gesture, the pointer state, whether pinches are armed, whether the index-only and two-finger poses are detected, finger-curl and pinch ratios, FPS, and action alerts. Press **Q** while the video window is focused to quit.
+Allow webcam access if prompted. The live view displays hand landmarks and a compact HUD: the current mode in large type with a one-line hint, FPS, and the last action as a short banner. Press **D** to toggle the detailed tuning readout (raw gesture, pointer and pinch state, poses, finger-curl, 3D flexion, and pinch ratios). Press **Q** while the video window is focused to quit.
 
 ## Project layout
 

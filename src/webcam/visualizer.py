@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -11,6 +12,8 @@ from ..config import (
     CAMERA_ID,
     HAND_CONNECTIONS,
     PINCH_THRESHOLD,
+    POINTER_CLAW_MAX_FLEX_DEGREES,
+    POINTER_CLAW_MIN_FLEX_DEGREES,
     POINTER_ENTER_FRAMES,
     WINDOW_NAME,
 )
@@ -20,8 +23,12 @@ from ..recognition.gesture_engine import (
     FIST_RELEASE_FRAMES,
     GestureDiagnostics,
     GestureState,
+    HandPose,
 )
 from ..recognition.hand_detector import HandPrediction
+
+Color = tuple[int, int, int]
+FOOTER_TEXT = "D: details | Q: quit"
 
 
 @dataclass(frozen=True)
@@ -34,7 +41,12 @@ class FrameState:
 
 
 class Visualizer:
-    """Own webcam capture and draw landmarks, gesture state, and HUD."""
+    """Own webcam capture and draw landmarks, gesture state, and HUD.
+
+    By default the HUD is compact: one large mode label with a short hint,
+    the last action, and a key reminder. Press D to toggle the detailed
+    tuning readout.
+    """
 
     _FINGER_COLORS = (
         (255, 160, 70),   # thumb, BGR
@@ -46,11 +58,25 @@ class Visualizer:
     _PINCH_COLOR = (80, 230, 80)
     _OPEN_COLOR = (40, 100, 255)
     _TEXT_COLOR = (245, 245, 245)
+    _MUTED_COLOR = (170, 170, 170)
     _POINTER_COLOR = (255, 200, 60)
+    _SCROLL_COLOR = (80, 200, 255)
+    _NAVIGATION_COLOR = (230, 140, 255)
+    _OUTLINE_COLOR = (0, 0, 0)
+    _PANEL_COLOR = (20, 20, 20)
+    _PANEL_OPACITY = 0.6
+    _ALERT_COLOR = (40, 110, 40)
+    _FONT_WIDTH_PER_SCALE = 19  # approx. pixels per character at scale 1.0
 
-    def __init__(self, camera_id: int = CAMERA_ID, backend_name: str = "") -> None:
+    def __init__(
+        self,
+        camera_id: int = CAMERA_ID,
+        backend_name: str = "",
+        show_details: bool = False,
+    ) -> None:
         self.camera_id = camera_id
         self.backend_name = backend_name
+        self.show_details = show_details
 
     def run(self, process_frame: Callable[[Any], FrameState]) -> None:
         """Capture frames and pass each frame to the application pipeline."""
@@ -79,8 +105,11 @@ class Visualizer:
 
                 self._draw(frame, state, fps)
                 cv2.imshow(WINDOW_NAME, frame)
-                if cv2.waitKey(1) & 0xFF == ord("q"):
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord("q"):
                     break
+                if key == ord("d"):
+                    self.show_details = not self.show_details
         finally:
             camera.release()
             cv2.destroyAllWindows()
@@ -101,6 +130,178 @@ class Visualizer:
                 pinch_tip_index=pinch_tip_index,
             )
 
+        diagnostics = state.diagnostics or GestureDiagnostics()
+        height, width = frame.shape[:2]
+        if self.show_details:
+            self._draw_details(cv2, frame, state, diagnostics, fps)
+        else:
+            self._draw_status(cv2, frame, state, diagnostics, fps, width)
+
+        alert = self._short_alert(state.alert)
+        if alert:
+            text_width = self._text_width(alert, 0.8)
+            left = max(8, (width - text_width) // 2 - 16)
+            right = min(width - 8, left + text_width + 32)
+            cv2.rectangle(
+                frame,
+                (left, height - 78),
+                (right, height - 34),
+                self._ALERT_COLOR,
+                -1,
+            )
+            self._text(cv2, frame, alert, (left + 16, height - 46), 0.8)
+        self._text(
+            cv2, frame, FOOTER_TEXT, (12, height - 12), 0.5, self._MUTED_COLOR
+        )
+
+    def _draw_status(
+        self,
+        cv2: Any,
+        frame: Any,
+        state: FrameState,
+        diagnostics: GestureDiagnostics,
+        fps: float,
+        width: int,
+    ) -> None:
+        """Compact HUD: the current mode in large type and one hint."""
+        label, hint, color = self._status(state, diagnostics)
+        panel_width = max(
+            self._text_width(label, 1.1), self._text_width(hint, 0.6)
+        ) + 28
+        self._shade(cv2, frame, (8, 8), (8 + panel_width, 92))
+        self._text(cv2, frame, label, (20, 50), 1.1, color, thickness=3)
+        self._text(cv2, frame, hint, (20, 80), 0.6)
+
+        fps_text = f"{fps:.0f} FPS"
+        self._text(
+            cv2,
+            frame,
+            fps_text,
+            (width - self._text_width(fps_text, 0.5) - 12, 24),
+            0.5,
+            self._MUTED_COLOR,
+        )
+
+    def _status(
+        self,
+        state: FrameState,
+        diagnostics: GestureDiagnostics,
+    ) -> tuple[str, str, Color]:
+        """Return the mode label, a short hint, and the label color."""
+        if state.gesture == GestureState.PINCH_LEFT_CLICK:
+            return "LEFT CLICK", "open fingers to release", self._PINCH_COLOR
+        if state.gesture == GestureState.PINCH_RIGHT_CLICK:
+            return "RIGHT CLICK", "open fingers to release", self._PINCH_COLOR
+        if diagnostics.pointer_active:
+            hint = (
+                "frozen - finish the pinch to click"
+                if diagnostics.pointer_frozen
+                else "pinch thumb + index/middle to click"
+            )
+            return "CURSOR", hint, self._POINTER_COLOR
+        if diagnostics.pointer_arming_frames:
+            return (
+                "CURSOR",
+                "hold still... "
+                f"{diagnostics.pointer_arming_frames}/{POINTER_ENTER_FRAMES}",
+                self._MUTED_COLOR,
+            )
+        if diagnostics.stable_pose == HandPose.OPEN_PALM:
+            hint = "move up / down"
+            if diagnostics.pinch_enabled:
+                hint += " | pinch to click"
+            return "SCROLL", hint, self._SCROLL_COLOR
+        if diagnostics.stable_pose == HandPose.INDEX_ONLY:
+            return (
+                "HISTORY",
+                "swipe sideways: back / forward",
+                self._NAVIGATION_COLOR,
+            )
+        if diagnostics.stable_pose == HandPose.TWO_FINGER:
+            return (
+                "TABS",
+                "swipe sideways: previous / next",
+                self._NAVIGATION_COLOR,
+            )
+        if not state.hands:
+            return "NO HAND", "show your hand to the camera", self._MUTED_COLOR
+        if diagnostics.pinch_enabled:
+            return "READY", "pinch armed: pinch to click", self._TEXT_COLOR
+        return (
+            "READY",
+            "claw: cursor | palm: scroll | 1-2 fingers: swipe",
+            self._TEXT_COLOR,
+        )
+
+    @staticmethod
+    def _short_alert(alert: str | None) -> str | None:
+        """Turn a translator message into a short label like 'NEXT TAB'."""
+        if not alert:
+            return None
+        match = re.search(r"Action: (\w+)", alert)
+        if match is None:
+            return alert
+        return match.group(1).replace("_", " ")
+
+    def _text_width(self, text: str, scale: float) -> int:
+        # Estimated so the HUD needs no cv2.getTextSize round trip.
+        return int(len(text) * self._FONT_WIDTH_PER_SCALE * scale)
+
+    def _text(
+        self,
+        cv2: Any,
+        frame: Any,
+        text: str,
+        origin: tuple[int, int],
+        scale: float,
+        color: Color | None = None,
+        thickness: int = 1,
+    ) -> None:
+        """Draw text with a dark outline so it reads on any background."""
+        for line_color, line_thickness in (
+            (self._OUTLINE_COLOR, thickness + 3),
+            (color or self._TEXT_COLOR, thickness),
+        ):
+            cv2.putText(
+                frame,
+                text,
+                origin,
+                cv2.FONT_HERSHEY_SIMPLEX,
+                scale,
+                line_color,
+                line_thickness,
+                cv2.LINE_AA,
+            )
+
+    def _shade(
+        self,
+        cv2: Any,
+        frame: Any,
+        top_left: tuple[int, int],
+        bottom_right: tuple[int, int],
+    ) -> None:
+        """Darken a translucent panel behind text."""
+        overlay = frame.copy()
+        cv2.rectangle(overlay, top_left, bottom_right, self._PANEL_COLOR, -1)
+        cv2.addWeighted(
+            overlay,
+            self._PANEL_OPACITY,
+            frame,
+            1.0 - self._PANEL_OPACITY,
+            0,
+            frame,
+        )
+
+    def _draw_details(
+        self,
+        cv2: Any,
+        frame: Any,
+        state: FrameState,
+        diagnostics: GestureDiagnostics,
+        fps: float,
+    ) -> None:
+        """Detailed tuning readout (toggle with D)."""
+        label, hint, _ = self._status(state, diagnostics)
         if state.gesture in {
             GestureState.PINCH_LEFT_CLICK,
             GestureState.PINCH_RIGHT_CLICK,
@@ -113,7 +314,6 @@ class Visualizer:
             if state.pinch_distance_ratio is not None
             else "--"
         )
-        diagnostics = state.diagnostics or GestureDiagnostics()
         curl_text = "/".join(
             "--" if ratio is None else f"{ratio:.2f}"
             for ratio in diagnostics.curl_ratios
@@ -146,8 +346,11 @@ class Visualizer:
         else:
             filter_text = "Filter: ready"
         hud_lines = (
-            (f"Wave Command | {self.backend_name}", self._TEXT_COLOR),
-            (f"FPS: {fps:.1f}", self._TEXT_COLOR),
+            (
+                f"Wave Command | {self.backend_name} | {fps:.0f} FPS",
+                self._TEXT_COLOR,
+            ),
+            (f"Mode: {label} - {hint}", self._TEXT_COLOR),
             (f"Gesture: {state.gesture.value}", gesture_color),
             (f"Raw: {diagnostics.raw_gesture.value}", self._TEXT_COLOR),
             (filter_text, self._TEXT_COLOR),
@@ -157,17 +360,15 @@ class Visualizer:
                 if diagnostics.pointer_active
                 else self._TEXT_COLOR,
             ),
-            (
-                "Pinch gate: "
-                f"{'armed' if diagnostics.pinch_enabled else 'show upright palm'}",
-                self._TEXT_COLOR,
-            ),
+            (f"Pose: {diagnostics.stable_pose.value}", self._TEXT_COLOR),
+            (f"Pinch gate: {self._pinch_gate_text(diagnostics)}", self._TEXT_COLOR),
             (
                 "Curl I/M/R/P: "
                 f"{curl_text} "
                 f"({diagnostics.curled_fingers}/{diagnostics.visible_fingers})",
                 self._TEXT_COLOR,
             ),
+            (self._flex_text(diagnostics), self._TEXT_COLOR),
             (
                 "Index-only history pose: "
                 f"{'detected' if diagnostics.index_only_hand else 'not detected'}",
@@ -184,37 +385,51 @@ class Visualizer:
                 self._TEXT_COLOR,
             ),
             (f"Selected pinch ratio: {distance_text}", self._TEXT_COLOR),
-            (
-                "Claw: cursor | Palm: scroll | 2 fingers: tabs | "
-                "Index: history | Q: quit",
-                self._TEXT_COLOR,
-            ),
+        )
+        scale = 0.5
+        line_height = 20
+        panel_width = max(
+            self._text_width(text, scale) for text, _ in hud_lines
+        ) + 24
+        self._shade(
+            cv2,
+            frame,
+            (8, 8),
+            (8 + panel_width, 18 + line_height * len(hud_lines)),
         )
         for line_index, (text, color) in enumerate(hud_lines):
-            cv2.putText(
+            self._text(
+                cv2,
                 frame,
                 text,
-                (12, 28 + line_index * 26),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.62,
+                (16, 28 + line_index * line_height),
+                scale,
                 color,
-                2,
-                cv2.LINE_AA,
             )
 
-        if state.alert:
-            cv2.rectangle(frame, (8, frame.shape[0] - 58),
-                          (frame.shape[1] - 8, frame.shape[0] - 8), (30, 90, 30), -1)
-            cv2.putText(
-                frame,
-                state.alert,
-                (18, frame.shape[0] - 25),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.55,
-                self._TEXT_COLOR,
-                2,
-                cv2.LINE_AA,
-            )
+    @staticmethod
+    def _flex_text(diagnostics: GestureDiagnostics) -> str:
+        if all(flex is None for flex in diagnostics.finger_flex):
+            return "Flex 3D I/M/R/P: no depth (2D claw rules)"
+        values = "/".join(
+            "--" if flex is None else f"{flex:.0f}"
+            for flex in diagnostics.finger_flex
+        )
+        return (
+            f"Flex 3D I/M/R/P: {values} "
+            f"(claw {POINTER_CLAW_MIN_FLEX_DEGREES:.0f}-"
+            f"{POINTER_CLAW_MAX_FLEX_DEGREES:.0f})"
+        )
+
+    @staticmethod
+    def _pinch_gate_text(diagnostics: GestureDiagnostics) -> str:
+        if diagnostics.pinch_held:
+            return "held (open to release)"
+        if diagnostics.pointer_active:
+            return "direct (pointing)"
+        if diagnostics.pinch_enabled:
+            return "armed"
+        return "show upright palm"
 
     @staticmethod
     def _pointer_text(diagnostics: GestureDiagnostics) -> str:
