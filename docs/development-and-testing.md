@@ -7,7 +7,7 @@ main.py                         Application wiring
 src/config.py                   Shared thresholds and camera/model paths
 src/recognition/                 Model wrapper and geometric gesture rules
 src/translation/                 Gesture-to-action mapping and cursor control
-src/webcam/                      Camera capture and drawing/HUD
+src/webcam/                      Camera capture, drawing/HUD, status overlay
 requirements.txt                 Base runtime dependencies (MediaPipe backend)
 requirements-yolo.txt            Optional Ultralytics/PyTorch for a YOLO hand model
 scripts/setup_models.py          Verify MediaPipe and optional YOLO weights
@@ -31,11 +31,11 @@ Run unit tests:
 python -m unittest discover -s tests -v
 ```
 
-The tests cover the pointer pose and session (3D claw detection with depth, arming, palm tracking, direct pinch clicks, freezing, ignored swipes, exit), the pointer controller (direction, acceleration, jitter, freeze and reposition without jumps, edge clamping), pinch classification and activation, the open-palm scroll-start threshold and scroll-to-pinch re-arming, two-finger tab swipes (including the return stroke, pinch exclusion, and a scroll-then-swipe run through the translator), index-only history swipes, gesture-confusion cases (detection glitches, stray frames of another pose, noisy and flickering pinches, moving claws, slow drift, diagonal and return strokes, stale pinch arming), shortcut/wheel mappings and cooldowns, idle/missing-hand behavior, translator edge-trigger behavior, click cooldown suppression, PyAutoGUI dispatch with its pause disabled, and the HUD text. Close-window gesture tests remain skipped while that feature is disabled. Input dispatch is injected in tests; the tests do not require a webcam, OS input, or model inference.
+The tests cover the pointer pose and session (3D claw detection with depth, arming, palm tracking, direct pinch clicks, freezing, ignored swipes, exit), the pointer controller (direction, acceleration, jitter, freeze and reposition without jumps, edge clamping), pinch classification and activation, the open-palm scroll-start threshold and scroll-to-pinch re-arming, two-finger tab swipes (including the return stroke, pinch exclusion, and a scroll-then-swipe run through the translator), index-only history swipes, gesture-confusion cases (detection glitches, stray frames of another pose, noisy and flickering pinches, moving claws, slow drift, diagonal and return strokes, stale pinch arming), shortcut/wheel mappings and cooldowns, idle/missing-hand behavior, translator edge-trigger behavior, click cooldown suppression, PyAutoGUI dispatch with its pause disabled, the HUD text, the status overlay (status mapping, running without the preview, camera toggling), and bypass (button and **B** key toggling, the `BYPASSED` status, and no stale action on resume). Close-window gesture tests remain skipped while that feature is disabled. Input dispatch is injected in tests; the tests do not require a webcam, OS input, or model inference.
 
 ## Configuration
 
-Edit `src/config.py` for camera ID, model path, confidence threshold, pinch ratio, pointer arming/freeze/filter/speed settings, scroll start distance/dead zone/smoothing/speed, tab and history swipe distances, cooldowns, HUD duration, and skeleton connections. Keep behavior shared between services in configuration rather than duplicating magic values.
+Edit `src/config.py` for camera ID, model path, confidence threshold, pinch ratio, pointer arming/freeze/filter/speed settings, scroll start distance/dead zone/smoothing/speed, tab and history swipe distances, cooldowns, HUD duration, status overlay and camera preview at start (`SHOW_STATUS_OVERLAY`, `SHOW_CAMERA_PREVIEW`), overlay opacity and margin, and skeleton connections. The overlay's brand colors are defined in `StatusOverlay` in `src/webcam/overlay.py`. Keep behavior shared between services in configuration rather than duplicating magic values.
 
 ## Troubleshooting
 

@@ -26,9 +26,11 @@ from ..recognition.gesture_engine import (
     HandPose,
 )
 from ..recognition.hand_detector import HandPrediction
+from .overlay import OverlayStatus
 
 Color = tuple[int, int, int]
-FOOTER_TEXT = "D: details | Q: quit"
+FOOTER_TEXT = "B: bypass | D: details | Q: quit"
+OVERLAY_FOOTER_TEXT = "B: bypass | C: hide camera | D: details | Q: quit"
 
 
 @dataclass(frozen=True)
@@ -46,6 +48,16 @@ class Visualizer:
     By default the HUD is compact: one large mode label with a short hint,
     the last action, and a key reminder. Press D to toggle the detailed
     tuning readout.
+
+    With a status ``overlay`` (see ``StatusOverlay``) the same status is
+    shown in an always-on-top window and the camera preview becomes
+    optional: C or closing the preview hides it, and the overlay's
+    "camera" button brings it back. Without an overlay the preview is
+    always shown.
+
+    ``bypassed`` turns gesture actions off while detection and the HUD keep
+    running; B or the overlay's "bypass" button toggles it. The application
+    pipeline reads it to skip cursor movement and commands.
     """
 
     _FINGER_COLORS = (
@@ -66,6 +78,12 @@ class Visualizer:
     _PANEL_COLOR = (20, 20, 20)
     _PANEL_OPACITY = 0.6
     _ALERT_COLOR = (40, 110, 40)
+    # The overlay shows neutral modes (READY, NO HAND) in the brand blues
+    # instead of the HUD's white and grey; mode colors are kept as is.
+    _OVERLAY_NEUTRAL_COLORS = {
+        _TEXT_COLOR: (255, 208, 92),  # #5cd0ff electric blue
+        _MUTED_COLOR: (204, 167, 126),  # #7ea7cc soft blue-grey
+    }
     _FONT_WIDTH_PER_SCALE = 19  # approx. pixels per character at scale 1.0
 
     def __init__(
@@ -73,10 +91,17 @@ class Visualizer:
         camera_id: int = CAMERA_ID,
         backend_name: str = "",
         show_details: bool = False,
+        overlay: Any = None,
+        show_camera: bool = True,
+        bypassed: bool = False,
     ) -> None:
         self.camera_id = camera_id
         self.backend_name = backend_name
         self.show_details = show_details
+        self.overlay = overlay
+        # Without an overlay the preview is the only feedback and way to quit.
+        self.show_camera = show_camera or overlay is None
+        self.bypassed = bypassed
 
     def run(self, process_frame: Callable[[Any], FrameState]) -> None:
         """Capture frames and pass each frame to the application pipeline."""
@@ -91,6 +116,7 @@ class Visualizer:
             )
 
         previous_frame_at = time.perf_counter()
+        preview_open = False
         try:
             while True:
                 ok, frame = camera.read()
@@ -103,16 +129,65 @@ class Visualizer:
                 fps = 1.0 / elapsed if elapsed > 0 else 0.0
                 previous_frame_at = now
 
+                if self.overlay is not None:
+                    if self.overlay.consume_camera_toggle():
+                        self.show_camera = not self.show_camera
+                    if self.overlay.consume_bypass_toggle():
+                        self.bypassed = not self.bypassed
+                    self.overlay.show(self.overlay_status(state))
+                    self.overlay.pump()
+                    if self.overlay.quit_requested:
+                        break
+
+                if not self.show_camera:
+                    if preview_open:
+                        cv2.destroyWindow(WINDOW_NAME)
+                        preview_open = False
+                    continue
+
                 self._draw(frame, state, fps)
                 cv2.imshow(WINDOW_NAME, frame)
+                preview_open = True
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord("q"):
                     break
                 if key == ord("d"):
                     self.show_details = not self.show_details
+                if key == ord("b"):
+                    self.bypassed = not self.bypassed
+                if self.overlay is not None and (
+                    key == ord("c")
+                    or cv2.getWindowProperty(
+                        WINDOW_NAME, cv2.WND_PROP_VISIBLE
+                    ) < 1
+                ):
+                    # Hide the preview; the overlay keeps reporting status.
+                    self.show_camera = False
         finally:
             camera.release()
             cv2.destroyAllWindows()
+            if self.overlay is not None:
+                self.overlay.close()
+
+    def overlay_status(self, state: FrameState) -> OverlayStatus:
+        """Status for the always-on-top overlay, in the HUD's colors."""
+        label, hint, color = self._status(
+            state, state.diagnostics or GestureDiagnostics()
+        )
+        if state.hands:
+            hand_text, hand_color = "Hand detected", self._PINCH_COLOR
+        else:
+            hand_text, hand_color = "No hand in view", self._OPEN_COLOR
+        return OverlayStatus(
+            label=label,
+            hint=hint,
+            color=self._OVERLAY_NEUTRAL_COLORS.get(color, color),
+            hand_text=hand_text,
+            hand_color=hand_color,
+            action=self._short_alert(state.alert),
+            camera_visible=self.show_camera,
+            bypassed=self.bypassed,
+        )
 
     def _draw(self, frame: Any, state: FrameState, fps: float) -> None:
         import cv2
@@ -150,8 +225,9 @@ class Visualizer:
                 -1,
             )
             self._text(cv2, frame, alert, (left + 16, height - 46), 0.8)
+        footer = FOOTER_TEXT if self.overlay is None else OVERLAY_FOOTER_TEXT
         self._text(
-            cv2, frame, FOOTER_TEXT, (12, height - 12), 0.5, self._MUTED_COLOR
+            cv2, frame, footer, (12, height - 12), 0.5, self._MUTED_COLOR
         )
 
     def _draw_status(
@@ -188,6 +264,13 @@ class Visualizer:
         diagnostics: GestureDiagnostics,
     ) -> tuple[str, str, Color]:
         """Return the mode label, a short hint, and the label color."""
+        if self.bypassed:
+            hand = "hand seen" if state.hands else "no hand"
+            return (
+                "BYPASSED",
+                f"gesture actions off ({hand}) - B or resume",
+                self._OPEN_COLOR,
+            )
         if state.gesture == GestureState.PINCH_LEFT_CLICK:
             return "LEFT CLICK", "open fingers to release", self._PINCH_COLOR
         if state.gesture == GestureState.PINCH_RIGHT_CLICK:

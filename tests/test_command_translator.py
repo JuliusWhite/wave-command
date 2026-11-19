@@ -303,6 +303,23 @@ class CommandTranslatorTests(unittest.TestCase):
         self.assertEqual(len(messages), 1)
         self.assertEqual(buttons, ["left"])
 
+    def test_gesture_held_through_bypass_does_not_fire_on_resume(
+        self,
+    ) -> None:
+        buttons: list[str] = []
+        translator = CommandTranslator(
+            cooldown_sec=0, emit=lambda _message: None, click=buttons.append
+        )
+
+        translator.observe(GestureState.PINCH_LEFT_CLICK)
+        held = translator.process(GestureState.PINCH_LEFT_CLICK)
+        translator.process(GestureState.IDLE)
+        fresh = translator.process(GestureState.PINCH_LEFT_CLICK)
+
+        self.assertIsNone(held)
+        self.assertIsNotNone(fresh)
+        self.assertEqual(buttons, ["left"])
+
 
 
 class PyAutoGuiDispatchTests(unittest.TestCase):

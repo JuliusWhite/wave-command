@@ -125,6 +125,14 @@ class CommandTranslator:
         self._last_navigation_at = float("-inf")
         self._last_tab_switch_at = float("-inf")
 
+    def observe(self, gesture: GestureState) -> None:
+        """Track a gesture without acting on it (e.g. while bypassed).
+
+        A gesture still held when actions resume is then not treated as new,
+        so resuming never fires a stale click or swipe.
+        """
+        self._previous_gesture = gesture
+
     def process(
         self,
         gesture: GestureState,

@@ -23,7 +23,7 @@ Swipe directions are measured in the (unmirrored) camera image: right-to-left me
 - **Tab switching** and **history** swipes must be brisk (within 0.8 s). Bringing the hand back is ignored, so the return stroke does not undo the action; swipe the same way again to repeat.
 - **Cooldowns:** clicks 1.5 s; tab and history navigation 1 s. After a tab switch, clicks and history are also paused for 1 s.
 
-Actions are printed to the terminal and shown on the video HUD. Scrolling acts on the window under the cursor. See [docs/recognition-and-gestures.md](docs/recognition-and-gestures.md#cursor-control) for the full pointing walkthrough. The close-window gesture is temporarily disabled. These boundaries do not limit the broader project direction.
+Actions are printed to the terminal and shown in the status overlay (and on the video HUD when the camera preview is open). Scrolling acts on the window under the cursor. See [docs/recognition-and-gestures.md](docs/recognition-and-gestures.md#cursor-control) for the full pointing walkthrough. The close-window gesture is temporarily disabled. These boundaries do not limit the broader project direction.
 
 ## Moving the cursor
 
@@ -43,6 +43,8 @@ Actions are printed to the terminal and shown on the video HUD. Scrolling acts o
 6. **Stop** by opening your hand. The cursor stays where it is, and the other gestures work again. Scrolling and swipes are off while pointing.
 
 **Emergency stop:** move the physical mouse into any screen corner; PyAutoGUI's fail-safe stops the app.
+
+**Pause gestures:** click **bypass** in the status overlay (or press **B** in the camera preview) to turn gesture actions off without quitting; click **resume** to turn them back on. See [Run](#run).
 
 If the cursor does not move, press **D** for the detailed view and check the **Pointer** and **Flex 3D** lines: `off` means the shape is not recognized (compare the index and middle flex values with the claw band, and curl the ring and pinky further), `arming` that never completes means the hand is moving or the shape is unsteady, and `frozen for click` means the thumb is too close to a fingertip. See [Development and testing](docs/development-and-testing.md#the-cursor-does-not-move) for tuning.
 
@@ -81,13 +83,21 @@ python scripts/setup_models.py
 python main.py
 ```
 
-Allow webcam access if prompted. The live view displays hand landmarks and a compact HUD: the current mode in large type with a one-line hint, FPS, and the last action as a short banner. Press **D** to toggle the detailed tuning readout (raw gesture, pointer and pinch state, poses, finger-curl, 3D flexion, and pinch ratios). Press **Q** while the video window is focused to quit.
+Allow webcam access if prompted. A small, always-on-top **status overlay** opens in the top-right corner, styled in the Wave Command electric blue. It shows the current mode with a one-line hint, whether a hand is in view, and the last action. Drag it anywhere with the mouse. It never takes focus, so shortcuts still reach the browser. Its buttons:
+
+- **bypass** / **resume**: turn gesture actions off and back on. While bypassed, the hand is still tracked and the overlay shows `BYPASSED`, but no cursor movement, clicks, scrolls, or shortcuts are sent. A gesture still held when you resume does not fire; release it and repeat it.
+- **show camera** / **hide camera**: open or close the camera preview.
+- **✕**: quit Wave Command.
+
+The camera preview is hidden at start. When open, it displays hand landmarks and a compact HUD: the current mode in large type with a one-line hint, FPS, and the last action as a short banner. With the preview focused, press **B** to toggle bypass, **C** to hide the preview, **D** to toggle the detailed tuning readout (raw gesture, pointer and pinch state, poses, finger-curl, 3D flexion, and pinch ratios), and **Q** to quit.
+
+Set `SHOW_STATUS_OVERLAY = False` in `src/config.py` to run without the overlay (the preview is then always shown), or `SHOW_CAMERA_PREVIEW = True` to open the preview at start. If Tk is unavailable, the app falls back to the camera preview.
 
 ## Project layout
 
 - `src/recognition/` — hand landmark detection and geometric gesture rules.
 - `src/translation/` — gesture-to-action mapping and cursor control.
-- `src/webcam/` — camera capture and visualization.
+- `src/webcam/` — camera capture, visualization, and the always-on-top status overlay.
 - `scripts/setup_models.py` — backend and optional weights verification.
 - `requirements.txt` / `requirements-yolo.txt` — base dependencies / optional YOLO backend.
 - `tests/` — unit tests; no webcam or real input needed.

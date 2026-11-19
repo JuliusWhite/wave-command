@@ -31,11 +31,15 @@ The action mappings are `PINCH_LEFT_CLICK` → `LEFT_CLICK`, `PINCH_RIGHT_CLICK`
 
 ### Webcam and visualization service
 
-`src/webcam/visualizer.py` owns the OpenCV camera lifecycle, calls a supplied frame-processing function, draws all landmarks and skeleton connections, and renders the HUD. The thumb-to-finger line changes color when either pinch is recognized. By default the HUD is compact: a translucent panel with the current mode in large type (`CURSOR`, `SCROLL`, `TABS`, `HISTORY`, `LEFT CLICK`/`RIGHT CLICK`, `READY`, or `NO HAND`) and a one-line hint, the FPS in the corner, the most recent action as a short banner (for example `NEXT TAB`), and a key reminder. Text has a dark outline so it stays readable on any background. Press **D** to toggle the detailed tuning readout (backend, classifier and filter state, pointer state, stable pose, pinch gate, curl ratios, 3D flexion, swipe-pose detection, and pinch ratios). Press **Q** to exit.
+`src/webcam/visualizer.py` owns the OpenCV camera lifecycle, calls a supplied frame-processing function, draws all landmarks and skeleton connections, and renders the HUD. The thumb-to-finger line changes color when either pinch is recognized. By default the HUD is compact: a translucent panel with the current mode in large type (`CURSOR`, `SCROLL`, `TABS`, `HISTORY`, `LEFT CLICK`/`RIGHT CLICK`, `READY`, or `NO HAND`) and a one-line hint, the FPS in the corner, the most recent action as a short banner (for example `NEXT TAB`), and a key reminder. Text has a dark outline so it stays readable on any background. Press **D** to toggle the detailed tuning readout (backend, classifier and filter state, pointer state, stable pose, pinch gate, curl ratios, 3D flexion, swipe-pose detection, and pinch ratios). Press **B** to toggle bypass, **C** to hide the preview (when the overlay is running), and **Q** to exit.
+
+`src/webcam/overlay.py` provides `StatusOverlay`, a borderless, always-on-top Tk window that mirrors the HUD status (`OverlayStatus`: mode, hint, hand in view, last action, camera visibility, bypass). It is driven from the camera loop: the visualizer calls `show()` with the latest status and `pump()` once per frame, so no extra thread is needed. On Windows it is made non-activating and hidden from the taskbar, so clicking it never steals focus from the browser. Its buttons set flags that the visualizer reads once per frame (`consume_camera_toggle()`, `consume_bypass_toggle()`). With the overlay, the camera preview is optional and is skipped entirely while hidden. The overlay uses the brand palette (light electric blue on deep navy); neutral modes (`READY`, `NO HAND`) are shown in brand blues, while mode colors and the orange `BYPASSED` warning match the HUD.
+
+**Bypass.** `Visualizer.bypassed` turns gesture actions off on demand. Detection and recognition keep running so the overlay and HUD stay live, but `main.py` sends no pointer samples and calls `CommandTranslator.observe()` instead of `process()`. `observe()` tracks the current gesture without acting, so a gesture still held when actions resume is not treated as new and cannot fire a stale click or swipe.
 
 ### Application entry point
 
-`main.py` wires the services together. For each frame, it requests detections, evaluates the first detected hand (or `IDLE` if none), passes the pointer sample to `PointerController` and the gesture state to the translator, and returns a `FrameState` to the visualizer. The detector is closed even when the camera loop exits with an error.
+`main.py` wires the services together and opens the status overlay when `SHOW_STATUS_OVERLAY` is set (falling back to the camera preview if Tk is unavailable). For each frame, it requests detections, evaluates the first detected hand (or `IDLE` if none), passes the pointer sample to `PointerController` and the gesture state to the translator (or, while bypassed, resets the pointer and only lets the translator observe the gesture), and returns a `FrameState` to the visualizer. The detector is closed even when the camera loop exits with an error.
 
 ### Setup script
 
@@ -57,7 +61,8 @@ PointerController.update(pointer)    -> relative cursor movement
 CommandTranslator.process(state, scroll_amount)
         |  mouse click, wheel step, or keyboard shortcut, and action message
         v
-Visualizer draws landmarks, skeleton, pinch line, state, and alert
+Visualizer updates the status overlay and, when shown, draws
+landmarks, skeleton, pinch line, state, and alert
 ```
 
 The detector may return multiple hands; the visualizer draws all of them, while the initial gesture and translation flow uses the first detection only.

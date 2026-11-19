@@ -7,6 +7,7 @@ from src.recognition.gesture_engine import (
     GestureState,
     HandPose,
 )
+from src.webcam.overlay import bgr_to_hex
 from src.webcam.visualizer import FOOTER_TEXT, FrameState, Visualizer
 
 
@@ -214,6 +215,176 @@ class VisualizerTests(unittest.TestCase):
         self.assertEqual(camera.read.call_count, 2)
         camera.release.assert_called_once()
         cv2.destroyAllWindows.assert_called_once()
+
+
+class FakeOverlay:
+    """Stands in for StatusOverlay; quits after a set number of frames."""
+
+    def __init__(
+        self,
+        frames: int,
+        toggle_on: set[int] = frozenset(),
+        bypass_on: set[int] = frozenset(),
+    ) -> None:
+        self.frames = frames
+        self.toggle_on = toggle_on
+        self.bypass_on = bypass_on
+        self.statuses = []
+        self.quit_requested = False
+        self.closed = False
+
+    def consume_camera_toggle(self) -> bool:
+        return len(self.statuses) in self.toggle_on
+
+    def consume_bypass_toggle(self) -> bool:
+        return len(self.statuses) in self.bypass_on
+
+    def show(self, status) -> None:
+        self.statuses.append(status)
+
+    def pump(self) -> None:
+        self.quit_requested = len(self.statuses) >= self.frames
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def run_with_overlay(overlay, states, show_camera=False, keys=None):
+    cv2 = Mock()
+    camera = cv2.VideoCapture.return_value
+    camera.isOpened.return_value = True
+    camera.read.return_value = (True, object())
+    cv2.waitKey.side_effect = keys or (lambda _delay: -1)
+    cv2.getWindowProperty.return_value = 1.0
+    states = list(states)
+    with (
+        patch.dict(sys.modules, {"cv2": cv2}),
+        patch.object(Visualizer, "_draw"),
+    ):
+        Visualizer(overlay=overlay, show_camera=show_camera).run(
+            lambda _frame: states.pop(0) if len(states) > 1 else states[0]
+        )
+    return cv2
+
+
+class OverlayTests(unittest.TestCase):
+    def test_bgr_colors_become_tk_hex(self) -> None:
+        self.assertEqual(bgr_to_hex((40, 100, 255)), "#ff6428")
+
+    def test_overlay_reports_hand_presence_mode_and_action(self) -> None:
+        visualizer = Visualizer(overlay=FakeOverlay(1), show_camera=False)
+
+        no_hand = visualizer.overlay_status(
+            FrameState([], GestureState.IDLE, None, None)
+        )
+        scrolling = visualizer.overlay_status(
+            FrameState(
+                [Mock()],
+                GestureState.IDLE,
+                None,
+                "[WAVE COMMAND - TRANSLATOR] Gesture detected! -> "
+                "Action: NEXT_TAB (Executed)",
+                GestureDiagnostics(stable_pose=HandPose.OPEN_PALM),
+            )
+        )
+
+        self.assertEqual(no_hand.label, "NO HAND")
+        self.assertEqual(no_hand.hand_text, "No hand in view")
+        self.assertEqual(no_hand.hand_color, Visualizer._OPEN_COLOR)
+        self.assertIsNone(no_hand.action)
+        self.assertFalse(no_hand.camera_visible)
+        self.assertEqual(scrolling.label, "SCROLL")
+        self.assertEqual(scrolling.color, Visualizer._SCROLL_COLOR)
+        self.assertEqual(scrolling.hand_text, "Hand detected")
+        self.assertEqual(scrolling.hand_color, Visualizer._PINCH_COLOR)
+        self.assertEqual(scrolling.action, "NEXT TAB")
+
+    def test_overlay_runs_without_the_camera_preview(self) -> None:
+        overlay = FakeOverlay(3)
+
+        cv2 = run_with_overlay(
+            overlay, [FrameState([], GestureState.IDLE, None, None)]
+        )
+
+        self.assertEqual(len(overlay.statuses), 3)
+        cv2.imshow.assert_not_called()
+        self.assertTrue(overlay.closed)
+
+    def test_camera_button_toggles_the_preview(self) -> None:
+        overlay = FakeOverlay(5, toggle_on={1, 3})
+
+        cv2 = run_with_overlay(
+            overlay, [FrameState([], GestureState.IDLE, None, None)]
+        )
+
+        self.assertEqual(
+            [status.camera_visible for status in overlay.statuses],
+            [False, True, True, False, False],
+        )
+        self.assertEqual(cv2.imshow.call_count, 2)
+        cv2.destroyWindow.assert_called_once()
+
+    def test_c_key_hides_the_preview_but_keeps_the_overlay(self) -> None:
+        overlay = FakeOverlay(3)
+
+        cv2 = run_with_overlay(
+            overlay,
+            [FrameState([], GestureState.IDLE, None, None)],
+            show_camera=True,
+            keys=[ord("c")],
+        )
+
+        self.assertEqual(cv2.imshow.call_count, 1)
+        self.assertEqual(len(overlay.statuses), 3)
+        self.assertFalse(overlay.statuses[-1].camera_visible)
+
+    def test_bypass_button_toggles_gesture_actions(self) -> None:
+        overlay = FakeOverlay(4, bypass_on={1, 3})
+
+        run_with_overlay(
+            overlay, [FrameState([], GestureState.IDLE, None, None)]
+        )
+
+        self.assertEqual(
+            [status.bypassed for status in overlay.statuses],
+            [False, True, True, False],
+        )
+
+    def test_bypassed_status_overrides_the_mode(self) -> None:
+        visualizer = Visualizer(
+            overlay=FakeOverlay(1), show_camera=False, bypassed=True
+        )
+
+        status = visualizer.overlay_status(
+            FrameState(
+                [Mock()],
+                GestureState.IDLE,
+                None,
+                None,
+                GestureDiagnostics(stable_pose=HandPose.OPEN_PALM),
+            )
+        )
+
+        self.assertEqual(status.label, "BYPASSED")
+        self.assertIn("hand seen", status.hint)
+        self.assertTrue(status.bypassed)
+
+    def test_b_key_toggles_bypass(self) -> None:
+        overlay = FakeOverlay(2)
+
+        run_with_overlay(
+            overlay,
+            [FrameState([], GestureState.IDLE, None, None)],
+            show_camera=True,
+            keys=[ord("b"), -1],
+        )
+
+        self.assertEqual(
+            [status.bypassed for status in overlay.statuses], [False, True]
+        )
+
+    def test_without_overlay_the_preview_is_always_shown(self) -> None:
+        self.assertTrue(Visualizer(show_camera=False).show_camera)
 
 
 if __name__ == "__main__":

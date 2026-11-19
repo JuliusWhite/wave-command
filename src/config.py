@@ -88,6 +88,15 @@ POINTER_INVERT_X = True
 COMMAND_COOLDOWN_SEC = 1.5
 HUD_ALERT_DURATION_SEC = 2.5
 WINDOW_NAME = "Wave Command"
+# Small always-on-top status window (mode, hint, hand seen, last action).
+# With it running, the camera preview is optional.
+SHOW_STATUS_OVERLAY = True
+# Whether the camera preview opens at start; with the overlay it can be shown
+# or hidden at any time. Without the overlay the preview is always shown.
+SHOW_CAMERA_PREVIEW = False
+OVERLAY_OPACITY = 0.9
+# Distance of the overlay from the top-right screen corner at start.
+OVERLAY_MARGIN_PX = 20
 # MediaPipe Hands / common 21-point hand layout.
 HAND_CONNECTIONS: tuple[tuple[int, int], ...] = (
     (0, 1), (1, 2), (2, 3), (3, 4),

@@ -166,6 +166,7 @@ Defaults are centralized in `src/config.py`:
 - `POINTER_INVERT_X = True`
 - `COMMAND_COOLDOWN_SEC = 1.5`
 - `HUD_ALERT_DURATION_SEC = 2.5`
+- `SHOW_STATUS_OVERLAY = True`, `SHOW_CAMERA_PREVIEW = False`, `OVERLAY_OPACITY = 0.9`, `OVERLAY_MARGIN_PX = 20`
 - `CAMERA_ID = 0`
 
 Finger-angle limits (`FINGER_EXTENDED_ANGLE_DEGREES = 150`, `FINGER_CURLED_ANGLE_DEGREES = 130`) and the open-palm shape ratios are defined at the top of `src/recognition/gesture_engine.py`.
