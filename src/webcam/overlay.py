@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..config import OVERLAY_MARGIN_PX, OVERLAY_OPACITY, WINDOW_NAME
+from .app_icon import apply_tk_icon
 
 Color = tuple[int, int, int]  # BGR, as in OpenCV
 
@@ -124,6 +125,7 @@ class StatusOverlay:
         _make_dpi_aware()
         root = tk.Tk()
         root.title(WINDOW_NAME)
+        apply_tk_icon(root)
         root.overrideredirect(True)
         root.attributes("-topmost", True)
         try:

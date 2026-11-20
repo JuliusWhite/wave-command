@@ -44,6 +44,12 @@ The action mappings are `PINCH_LEFT_CLICK` → `LEFT_CLICK` (or `DOUBLE_CLICK` f
 
 `main.py` wires the services together and opens the status overlay when `SHOW_STATUS_OVERLAY` is set (falling back to the camera preview if Tk is unavailable). For each frame, it requests detections, lets `HandTracker` pick the tracked hand, evaluates that hand (or `IDLE` if none), passes the pointer sample to `PointerController` and the gesture state to the translator (or, while bypassed, resets the pointer and only lets the translator observe the gesture), and returns a `FrameState` to the visualizer. The detector is closed even when the camera loop exits with an error.
 
+### Launcher and app icon
+
+`wave_command.pyw` is a windowless launcher for the shortcuts made by `scripts/create_shortcut.py`. Run with `pythonw.exe`, it redirects standard output and errors to `wave-command.log`, calls `main()`, and on an unhandled exception logs the traceback and shows an error dialog instead of failing silently. `scripts/create_shortcut.py` creates the Desktop and Start Menu shortcuts through PowerShell's `WScript.Shell`, pointing at the current interpreter's `pythonw.exe` with the project folder as working directory and the app icon.
+
+`src/webcam/app_icon.py` applies the logo: `set_app_identity()` (called first in `main()`) sets an explicit AppUserModelID so Windows groups the app under its own taskbar entry instead of Python's; `apply_tk_icon()` sets the overlay's Tk window icon; and `apply_opencv_icon()` sets the camera preview's icon with `WM_SETICON` each time the preview opens, finding it by OpenCV's window class because the overlay has the same title. All of it is cosmetic and ignores failures. The icon paths (`ASSETS_DIR`, `APP_ICON_PATH`, `APP_LOGO_PATH`) are in `src/config.py`. `scripts/make_logo.py` draws the logo with Pillow in the overlay's brand colors (a blue wave-shaped "W" with three fingertip dots on a navy tile) and writes `assets/logo.png` and the multi-size `assets/wave_command.ico`.
+
 ### Setup script
 
 `scripts/setup_models.py` creates `models/`, initializes MediaPipe Hands to verify the default fallback, and optionally loads `models/hand-pose.pt`. It intentionally does not download an arbitrary third-party checkpoint: the repository does not assume an unverified YOLO model is a 21-keypoint hand-pose model. Do not use standard COCO pose weights, which predict 17 body keypoints. The project can run immediately with MediaPipe after installing the requirements.

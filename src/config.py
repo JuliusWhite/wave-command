@@ -6,6 +6,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MODELS_DIR = PROJECT_ROOT / "models"
 YOLO_HAND_MODEL_PATH = MODELS_DIR / "hand-pose.pt"
 
+# App logo (regenerate with scripts/make_logo.py) and Windows taskbar identity.
+ASSETS_DIR = PROJECT_ROOT / "assets"
+APP_ICON_PATH = ASSETS_DIR / "wave_command.ico"
+APP_LOGO_PATH = ASSETS_DIR / "logo.png"
+APP_USER_MODEL_ID = "WaveCommand.App"
+
 CAMERA_ID = 0
 CONFIDENCE_THRESHOLD = 0.5
 

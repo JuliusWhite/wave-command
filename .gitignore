@@ -6,3 +6,4 @@ models/training/
 /yolo11n-pose.pt
 .session-notes/
 CLAUDE.md
+wave-command.log

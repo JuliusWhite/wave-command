@@ -12,6 +12,7 @@ from src.config import (
 from src.recognition import GestureEngine, HandDetector, HandTracker
 from src.translation import CommandTranslator, PointerController
 from src.webcam import FrameState, StatusOverlay, Visualizer
+from src.webcam.app_icon import set_app_identity
 
 
 def create_overlay() -> StatusOverlay | None:
@@ -27,6 +28,7 @@ def create_overlay() -> StatusOverlay | None:
 
 
 def main() -> None:
+    set_app_identity()
     detector = HandDetector()
     tracker = HandTracker()
     gesture_engine = GestureEngine()

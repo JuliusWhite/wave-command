@@ -1,5 +1,7 @@
 # Wave Command
 
+<img src="assets/logo.png" alt="Wave Command logo" width="96">
+
 Wave Command is a hands-free computer interaction project. It uses a webcam to recognize hand gestures and map them to computer actions, with a long-term goal of supporting control across applications and the operating system.
 
 ## First iteration
@@ -89,6 +91,20 @@ python scripts/setup_models.py
 python main.py
 ```
 
+### Run without VS Code or a terminal (Windows)
+
+Create Desktop and Start Menu shortcuts once, with the virtual environment active:
+
+```powershell
+python scripts/create_shortcut.py
+```
+
+Then start **Wave Command** from the Desktop or the Start Menu (it can be pinned to the taskbar from there). The shortcut runs `wave_command.pyw` with the virtual environment's `pythonw.exe`, so no console window opens. Terminal output goes to `wave-command.log` in the project folder, and a crash shows an error dialog pointing to it. Quit with the overlay's **✕**. Pass `--no-desktop` or `--no-start-menu` to skip a location, and run the script again if the project folder or virtual environment moves. On macOS or Linux, run `pythonw wave_command.pyw` (or `python wave_command.pyw`) instead.
+
+The app has its own logo (`assets/`) in the shortcuts, the taskbar, and the camera preview window. Regenerate it with `python scripts/make_logo.py`.
+
+### Using the app
+
 Allow webcam access if prompted. A small, always-on-top **status overlay** opens centered at the top of the screen, styled in the Wave Command electric blue. It is a single row of icons:
 
 - **Mode icon**, in the mode's color: check mark (`READY`), crossed-out eye (`NO HAND`), pointer arrow (`CURSOR`), mouse with **L**/**R** (`LEFT CLICK`/`RIGHT CLICK`), up/down chevrons (`SCROLL`), clock (`HISTORY`), stacked pages (`TABS`), task view (`WINDOWS`), or pause (`BYPASSED`, in the overlay's blue).
@@ -112,7 +128,11 @@ Set `SHOW_STATUS_OVERLAY = False` in `src/config.py` to run without the overlay 
 - `src/recognition/` — hand landmark detection and geometric gesture rules.
 - `src/translation/` — gesture-to-action mapping and cursor control.
 - `src/webcam/` — camera capture, visualization, and the always-on-top status overlay.
+- `wave_command.pyw` — windowless launcher used by the shortcuts.
+- `assets/` — the app logo (`logo.png`) and Windows icon (`wave_command.ico`).
 - `scripts/setup_models.py` — backend and optional weights verification.
+- `scripts/create_shortcut.py` — creates the Desktop and Start Menu shortcuts (Windows).
+- `scripts/make_logo.py` — draws the logo and icon in the brand colors.
 - `requirements.txt` / `requirements-yolo.txt` — base dependencies / optional YOLO backend.
 - `tests/` — unit tests; no webcam or real input needed.
 - `docs/` — full documentation, starting at [docs/README.md](docs/README.md).

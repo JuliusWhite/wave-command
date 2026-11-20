@@ -31,7 +31,9 @@ The script creates `models/`, initializes MediaPipe Hands to verify its API is a
 python main.py
 ```
 
-`main()` creates a `HandDetector`, `HandTracker`, `GestureEngine`, `CommandTranslator`, `PointerController`, a `StatusOverlay` (unless `SHOW_STATUS_OVERLAY` is off or Tk is unavailable), and `Visualizer`. The visualizer opens the configured camera (`CAMERA_ID`, initially `0`) and passes each captured BGR frame to the application callback.
+Or use the **Wave Command** shortcut created by `scripts/create_shortcut.py`, which starts `wave_command.pyw` with `pythonw.exe`: the same `main()` runs without a console, with output written to `wave-command.log`.
+
+`main()` first sets the Windows taskbar identity (`APP_USER_MODEL_ID`), then creates a `HandDetector`, `HandTracker`, `GestureEngine`, `CommandTranslator`, `PointerController`, a `StatusOverlay` (unless `SHOW_STATUS_OVERLAY` is off or Tk is unavailable), and `Visualizer`. The visualizer opens the configured camera (`CAMERA_ID`, initially `0`) and passes each captured BGR frame to the application callback.
 
 ## 3. Per-frame runtime flow
 

@@ -4,13 +4,17 @@
 
 ```text
 main.py                         Application wiring
+wave_command.pyw                 Windowless launcher (no console; logs to wave-command.log)
 src/config.py                   Shared thresholds and camera/model paths
 src/recognition/                 Model wrapper and geometric gesture rules
 src/translation/                 Gesture-to-action mapping and cursor control
-src/webcam/                      Camera capture, drawing/HUD, status overlay
+src/webcam/                      Camera capture, drawing/HUD, status overlay, app icon
+assets/                          Logo (logo.png) and Windows icon (wave_command.ico)
 requirements.txt                 Base runtime dependencies (MediaPipe backend)
 requirements-yolo.txt            Optional Ultralytics/PyTorch for a YOLO hand model
 scripts/setup_models.py          Verify MediaPipe and optional YOLO weights
+scripts/create_shortcut.py       Create Desktop and Start Menu shortcuts (Windows)
+scripts/make_logo.py             Draw the logo and icon into assets/
 tests/                           Unit tests for gestures and translation
 models/                          Optional local YOLO checkpoint and training output
 docs/                            Project documentation
@@ -24,6 +28,8 @@ Start the application:
 ```powershell
 python main.py
 ```
+
+To start it without a terminal, run `python scripts/create_shortcut.py` once (Windows) and use the **Wave Command** shortcut, or run `pythonw wave_command.pyw`. Output then goes to `wave-command.log` (ignored by Git) in the project folder; check it when the app does not start or stops unexpectedly.
 
 Run unit tests:
 

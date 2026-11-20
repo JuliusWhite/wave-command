@@ -26,6 +26,7 @@ from ..recognition.gesture_engine import (
     HandPose,
 )
 from ..recognition.hand_detector import HandPrediction
+from .app_icon import apply_opencv_icon
 from .overlay import OverlayStatus
 
 Color = tuple[int, int, int]
@@ -151,6 +152,8 @@ class Visualizer:
 
                 self._draw(frame, state, fps)
                 cv2.imshow(WINDOW_NAME, frame)
+                if not preview_open:
+                    apply_opencv_icon(WINDOW_NAME)
                 preview_open = True
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord("q"):
