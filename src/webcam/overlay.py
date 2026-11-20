@@ -49,6 +49,7 @@ _MODE_ICONS: dict[str, Icon] = {
     "SCROLL": ("", "⇕", ""),         # up/down chevrons
     "HISTORY": ("", "↶", ""),        # clock with arrow
     "TABS": ("", "⧉", ""),           # stacked pages
+    "WINDOWS": ("", "❐", ""),        # task view
     "BYPASSED": ("", "⏸", ""),       # pause
 }
 _ACTION_ICONS: dict[str, Icon] = {
@@ -56,6 +57,8 @@ _ACTION_ICONS: dict[str, Icon] = {
     "RIGHT CLICK": ("", "◨", "R"),
     "NEXT TAB": ("", "⧉→", ""),
     "PREVIOUS TAB": ("", "←⧉", ""),
+    "NEXT WINDOW": ("", "❐→", ""),
+    "PREVIOUS WINDOW": ("", "←❐", ""),
     "BACK": ("", "←", ""),
     "FORWARD": ("", "→", ""),
     "SCROLL UP": ("", "↑", ""),
@@ -105,8 +108,6 @@ class StatusOverlay:
     _LINK = "#5cd0ff"
     _ACTION_BACKGROUND = "#1e8fff"
     _ACTION_TEXT = "#ffffff"
-    # Bypass stays warm on purpose so "actions off" is never missed.
-    _BYPASS_ACTIVE = "#ff8a3d"
 
     def __init__(self) -> None:
         import tkinter as tk
@@ -226,14 +227,8 @@ class StatusOverlay:
             text=self._icon(_CAMERA_ICON)[0],
             fg=self._LINK if status.camera_visible else self._MUTED,
         )
-        if status.bypassed:
-            self._bypass_button.configure(
-                text=self._icon(_PLAY_ICON)[0], fg=self._BYPASS_ACTIVE
-            )
-        else:
-            self._bypass_button.configure(
-                text=self._icon(_PAUSE_ICON)[0], fg=self._LINK
-            )
+        icon = _PLAY_ICON if status.bypassed else _PAUSE_ICON
+        self._bypass_button.configure(text=self._icon(icon)[0], fg=self._LINK)
 
     def pump(self) -> None:
         """Process pending window events; call once per camera frame."""

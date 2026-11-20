@@ -131,6 +131,18 @@ def make_index_middle_hand(
     return HandPrediction(tuple(points), hand.confidence)
 
 
+def make_three_finger_hand(
+    wrist_y: float,
+    wrist_x: float = 100.0,
+) -> HandPrediction:
+    """Index, middle, and ring extended, pinky curled."""
+    hand = make_open_hand(wrist_y, wrist_x)
+    points = list(hand.keypoints)
+    mcp = points[17]
+    points[20] = Keypoint(20, mcp.x, mcp.y - 10.0, 1.0, 0.5, 0.5)
+    return HandPrediction(tuple(points), hand.confidence)
+
+
 def make_pointer_hand(
     wrist_y: float = 300.0,
     wrist_x: float = 100.0,
@@ -528,6 +540,44 @@ class GestureEngineTests(unittest.TestCase):
                     [GestureState.IDLE] * 3 + [expected, GestureState.IDLE],
                 )
                 self.assertTrue(engine.diagnostics.two_finger_hand)
+
+    def test_three_finger_swipes_change_windows(self) -> None:
+        for start_x, end_x, expected in (
+            (200.0, 0.0, GestureState.PREVIOUS_WINDOW),
+            (0.0, 200.0, GestureState.NEXT_WINDOW),
+        ):
+            with self.subTest(start_x=start_x, end_x=end_x):
+                engine = GestureEngine()
+                engine.evaluate(make_three_finger_hand(300.0, wrist_x=start_x))
+
+                results = []
+                step = (end_x - start_x) / 5
+                for frame in range(1, 6):
+                    results.append(
+                        engine.evaluate(
+                            make_three_finger_hand(
+                                300.0,
+                                wrist_x=start_x + step * frame,
+                            )
+                        )
+                    )
+
+                self.assertEqual(
+                    [result.gesture for result in results],
+                    [GestureState.IDLE] * 3 + [expected, GestureState.IDLE],
+                )
+                diagnostics = engine.diagnostics
+                self.assertTrue(diagnostics.three_finger_hand)
+                self.assertFalse(diagnostics.two_finger_hand)
+                self.assertEqual(diagnostics.stable_pose, HandPose.THREE_FINGER)
+
+    def test_two_finger_pose_is_not_three_finger_pose(self) -> None:
+        engine = GestureEngine()
+
+        engine.evaluate(make_index_middle_hand(300.0))
+
+        self.assertTrue(engine.diagnostics.two_finger_hand)
+        self.assertFalse(engine.diagnostics.three_finger_hand)
 
     def test_two_finger_return_stroke_is_ignored_but_repeat_works(
         self,

@@ -143,6 +143,28 @@ class CommandTranslatorTests(unittest.TestCase):
             [("ctrl", "tab"), ("ctrl", "shift", "tab")],
         )
 
+    def test_window_swipes_send_window_switch_shortcuts(self) -> None:
+        hotkeys: list[tuple[str, ...]] = []
+        current_time = [10.0]
+        translator = CommandTranslator(
+            cooldown_sec=10,
+            clock=lambda: current_time[0],
+            switch_window=lambda *keys: hotkeys.append(keys),
+        )
+
+        translator.process(GestureState.NEXT_WINDOW)
+        translator.process(GestureState.IDLE)
+        current_time[0] += 0.5
+        translator.process(GestureState.PREVIOUS_WINDOW)  # cooling down
+        translator.process(GestureState.IDLE)
+        current_time[0] += 0.5
+        translator.process(GestureState.PREVIOUS_WINDOW)
+
+        self.assertEqual(
+            hotkeys,
+            [("alt", "tab"), ("alt", "shift", "tab")],
+        )
+
     def test_tab_cooldown_blocks_repeat_and_opposite_swipes(self) -> None:
         hotkeys: list[tuple[str, ...]] = []
         current_time = [10.0]

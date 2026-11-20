@@ -11,17 +11,19 @@ This iteration focuses on a small set of common actions, prioritizing web-browse
 | Pinch-ready claw: ring and pinky curled, index and middle relaxed and slightly bent | Move the hand | Move the cursor; pinch from this pose to click |
 | Upright open palm facing the camera | Move up or down | Scroll (hand up scrolls down, hand down scrolls up) |
 | Index and middle fingers extended, ring and pinky curled | Swipe sideways | Switch browser tab (Ctrl+Tab / Ctrl+Shift+Tab) |
+| Index, middle, and ring fingers extended, pinky curled | Swipe sideways | Switch window (Alt+Tab / Alt+Shift+Tab) |
 | Only the index finger extended | Swipe sideways | Browser back / forward (Alt+Left / Alt+Right) |
 | Thumb tip to index tip | Pinch | Left-click |
 | Thumb tip to middle tip | Pinch | Right-click |
 
-Swipe directions are measured in the (unmirrored) camera image: right-to-left means previous tab or back, and left-to-right means next tab or forward.
+Swipe directions are measured in the (unmirrored) camera image: right-to-left means previous tab, previous window, or back, and left-to-right means next tab, next window, or forward.
 
 - **Cursor:** see [Moving the cursor](#moving-the-cursor) below.
 - **Pinches outside pointing** must be armed by showing an upright open palm first, and each pinch uses up the arming. The pinch threshold is `0.45` times the wrist-to-middle-MCP hand size, so clicks register before the fingertips touch. If both pinch ratios are within the threshold but differ by less than `0.08`, the pose is ambiguous and does not click.
 - **Scrolling** starts after about `0.15` hand sizes of vertical movement. It disarms pinches: release the open palm and present it again before pinching.
-- **Tab switching** and **history** swipes must be brisk (within 0.8 s). Bringing the hand back is ignored, so the return stroke does not undo the action; swipe the same way again to repeat.
-- **Cooldowns:** clicks 1.5 s; tab and history navigation 1 s. After a tab switch, clicks and history are also paused for 1 s.
+- **Tab, window, and history** swipes must be brisk (within 0.8 s). Bringing the hand back is ignored, so the return stroke does not undo the action; swipe the same way again to repeat.
+- **Window switching** sends a single Alt+Tab, so repeated "next" swipes alternate between the two most recently used windows, and "previous" (Alt+Shift+Tab) jumps to the least recently used one. Alt is held down briefly around the Tab press, because Windows ignores an instant Alt+Tab.
+- **Cooldowns:** clicks 1.5 s; tab, window, and history navigation 1 s. After a tab or window switch, clicks and history are also paused for 1 s.
 
 Actions are printed to the terminal and shown in the status overlay (and on the video HUD when the camera preview is open). Scrolling acts on the window under the cursor. See [docs/recognition-and-gestures.md](docs/recognition-and-gestures.md#cursor-control) for the full pointing walkthrough. The close-window gesture is temporarily disabled. These boundaries do not limit the broader project direction.
 
@@ -87,13 +89,13 @@ python main.py
 
 Allow webcam access if prompted. A small, always-on-top **status overlay** opens centered at the top of the screen, styled in the Wave Command electric blue. It is a single row of icons:
 
-- **Mode icon**, in the mode's color: check mark (`READY`), crossed-out eye (`NO HAND`), pointer arrow (`CURSOR`), mouse with **L**/**R** (`LEFT CLICK`/`RIGHT CLICK`), up/down chevrons (`SCROLL`), clock (`HISTORY`), stacked pages (`TABS`), or pause (`BYPASSED`).
-- **Last action** in a blue box: arrows for back/forward and scroll up/down, stacked pages with an arrow for next/previous tab, or a mouse with **L**/**R** for clicks. Empty when there is no recent action.
-- **Hand dot:** green while a hand is tracked, orange when none is in view.
+- **Mode icon**, in the mode's color: check mark (`READY`), crossed-out eye (`NO HAND`), pointer arrow (`CURSOR`), mouse with **L**/**R** (`LEFT CLICK`/`RIGHT CLICK`), up/down chevrons (`SCROLL`), clock (`HISTORY`), stacked pages (`TABS`), task view (`WINDOWS`), or pause (`BYPASSED`, in the overlay's blue).
+- **Last action** in a blue box: arrows for back/forward and scroll up/down, stacked pages with an arrow for next/previous tab, task view with an arrow for next/previous window, or a mouse with **L**/**R** for clicks. Empty when there is no recent action.
+- **Hand dot:** green while a hand is tracked, orange when none is in view. While bypassed it stays orange, even with a hand in view, because the hand drives nothing.
 
 Drag it anywhere with the mouse. It never takes focus, so shortcuts still reach the browser. Its buttons:
 
-- **pause** / **play**: turn gesture actions off and back on (play is orange while bypassed). While bypassed, the hand is still tracked and the overlay shows the `BYPASSED` pause icon, but no cursor movement, clicks, scrolls, or shortcuts are sent. A gesture still held when you resume does not fire; release it and repeat it.
+- **pause** / **play**: turn gesture actions off and back on (both icons are in the overlay's blue). While bypassed, the hand is still tracked and the overlay shows the `BYPASSED` pause icon, but no cursor movement, clicks, scrolls, or shortcuts are sent. A gesture still held when you resume does not fire; release it and repeat it.
 - **camera**: open or close the camera preview (dimmed while the preview is hidden).
 - **✕**: quit Wave Command.
 

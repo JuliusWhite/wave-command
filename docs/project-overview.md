@@ -8,7 +8,7 @@ The longer-term project may support interactions across applications and the ope
 
 ## First-iteration behavior
 
-The current implementation recognizes a pinch-ready claw pose for moving the cursor, thumb-to-index and thumb-to-middle pinches for left/right clicks, upright open-palm vertical movements for scrolling, horizontal two-finger (index and middle) swipes for switching tabs, and horizontal index-only swipes for back/forward browser history. The close-window gesture is temporarily disabled, with its code retained in comments for future reactivation.
+The current implementation recognizes a pinch-ready claw pose for moving the cursor, thumb-to-index and thumb-to-middle pinches for left/right clicks, upright open-palm vertical movements for scrolling, horizontal two-finger (index and middle) swipes for switching tabs, horizontal three-finger (index, middle, and ring) swipes for switching windows, and horizontal index-only swipes for back/forward browser history. The close-window gesture is temporarily disabled, with its code retained in comments for future reactivation.
 
 Each action uses its own hand pose. An earlier version shared the open palm between scrolling (vertical) and tab switching (horizontal); the two were easily confused, so tab switching moved to the two-finger pose.
 
@@ -24,7 +24,7 @@ The application can also use a compatible YOLO hand-pose checkpoint at `models/h
 
 ## Safety and scope
 
-- Cursor movement, pinches, scrolling, and tab/history swipes send real mouse and keyboard input. Moving the physical mouse into a screen corner aborts the app (PyAutoGUI fail-safe). The status overlay's **pause** button (or **B** in the camera preview) turns all gesture actions off on demand without quitting.
+- Cursor movement, pinches, scrolling, and tab/window/history swipes send real mouse and keyboard input. Moving the physical mouse into a screen corner aborts the app (PyAutoGUI fail-safe). The status overlay's **pause** button (or **B** in the camera preview) turns all gesture actions off on demand without quitting.
 - Cooldowns, pinch arming and confirmation, a pose stabilizer, and return-stroke lockouts limit accidental, confused, or repeated actions.
 - Translation is separated from recognition so click dispatch can be tested independently.
 - Recognition and visualization are kept separate from translation so each can evolve independently.

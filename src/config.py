@@ -22,7 +22,8 @@ PINCH_CONFIRM_FRAMES = 2
 PINCH_RELEASE_THRESHOLD = 0.6
 # An open palm arms one pinch for this long; stale arming does not linger.
 PINCH_ARM_TIMEOUT_SEC = 3.0
-# Pose stabilizer for the open-palm, index-only, and two-finger poses.
+# Pose stabilizer for the open-palm, index-only, two-finger, and three-finger
+# poses.
 # A recognized pose survives this many mismatched frames before it ends, so
 # one bad frame does not reset a scroll or swipe in progress.
 POSE_RELEASE_FRAMES = 3
@@ -38,6 +39,8 @@ SCROLL_MAX_HAND_SIZES_PER_SEC = 2.5
 # Horizontal wrist displacement, in hand sizes, of an index-and-middle-finger
 # swipe that switches the browser tab.
 TAB_SWIPE_DISTANCE_RATIO = 1.25
+# Same for the index, middle, and ring finger swipe that switches windows.
+WINDOW_SWIPE_DISTANCE_RATIO = 1.25
 HISTORY_SWIPE_DISTANCE_RATIO = 1.25
 # A swipe must cover its distance within this time; slow drift never swipes.
 SWIPE_WINDOW_SEC = 0.8

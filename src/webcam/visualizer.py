@@ -77,6 +77,7 @@ class Visualizer:
     _SCROLL_COLOR = (80, 200, 255)
     _NAVIGATION_COLOR = (230, 140, 255)
     _TABS_COLOR = (250, 139, 167)  # #a78bfa lavender violet
+    _WINDOWS_COLOR = (153, 211, 52)  # #34d399 mint green
     _OUTLINE_COLOR = (0, 0, 0)
     _PANEL_COLOR = (20, 20, 20)
     _PANEL_OPACITY = 0.6
@@ -177,14 +178,23 @@ class Visualizer:
         label, hint, color = self._status(
             state, state.diagnostics or GestureDiagnostics()
         )
-        if state.hands:
+        if self.bypassed:
+            # Stay red while bypassed: a seen hand drives nothing.
+            hand_text = "Hand detected" if state.hands else "No hand in view"
+            hand_color = self._OPEN_COLOR
+        elif state.hands:
             hand_text, hand_color = "Hand detected", self._PINCH_COLOR
         else:
             hand_text, hand_color = "No hand in view", self._OPEN_COLOR
         return OverlayStatus(
             label=label,
             hint=hint,
-            color=self._OVERLAY_NEUTRAL_COLORS.get(color, color),
+            # The bypassed mode icon uses the overlay's blue, like its buttons.
+            color=(
+                self._OVERLAY_NEUTRAL_COLORS[self._TEXT_COLOR]
+                if self.bypassed
+                else self._OVERLAY_NEUTRAL_COLORS.get(color, color)
+            ),
             hand_text=hand_text,
             hand_color=hand_color,
             action=self._short_alert(state.alert),
@@ -311,13 +321,19 @@ class Visualizer:
                 "swipe sideways: previous / next",
                 self._TABS_COLOR,
             )
+        if diagnostics.stable_pose == HandPose.THREE_FINGER:
+            return (
+                "WINDOWS",
+                "swipe sideways: previous / next",
+                self._WINDOWS_COLOR,
+            )
         if not state.hands:
             return "NO HAND", "show your hand to the camera", self._MUTED_COLOR
         if diagnostics.pinch_enabled:
             return "READY", "pinch armed: pinch to click", self._TEXT_COLOR
         return (
             "READY",
-            "claw: cursor | palm: scroll | 1-2 fingers: swipe",
+            "claw: cursor | palm: scroll | 1-3 fingers: swipe",
             self._TEXT_COLOR,
         )
 
@@ -465,6 +481,11 @@ class Visualizer:
             (
                 "Two-finger tab pose: "
                 f"{'detected' if diagnostics.two_finger_hand else 'not detected'}",
+                self._TEXT_COLOR,
+            ),
+            (
+                "Three-finger window pose: "
+                f"{'detected' if diagnostics.three_finger_hand else 'not detected'}",
                 self._TEXT_COLOR,
             ),
             (

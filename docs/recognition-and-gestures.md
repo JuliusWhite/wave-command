@@ -48,18 +48,19 @@ The ordering matches MediaPipe Hands:
 | Pinch-ready claw (ring + pinky curled, index + middle relaxed) | Any | `PointerSample` on `GestureResult.pointer` | Cursor movement; pinches click |
 | Upright open palm | Vertical | `SCROLL_UP` / `SCROLL_DOWN` | Mouse wheel |
 | Index + middle extended, ring + pinky curled | Horizontal swipe | `NEXT_TAB` / `PREVIOUS_TAB` | Ctrl+Tab / Ctrl+Shift+Tab |
+| Index + middle + ring extended, pinky curled | Horizontal swipe | `NEXT_WINDOW` / `PREVIOUS_WINDOW` | Alt+Tab / Alt+Shift+Tab |
 | Index only extended | Horizontal swipe | `FORWARD` / `BACK` | Alt+Right / Alt+Left |
 | Thumb tip to index tip | Pinch | `PINCH_LEFT_CLICK` | Left-click |
 | Thumb tip to middle tip | Pinch | `PINCH_RIGHT_CLICK` | Right-click |
 
-Finger poses are judged by the joint angle at each finger's PIP joint (MCP–PIP–tip): at least `150` degrees counts as extended and at most `130` degrees as curled. Each pose owns one action. An active pointer session takes priority; otherwise the engine checks the open palm, index-only, and two-finger poses in that order. Moving into a different pose resets the movement anchors of the others.
+Finger poses are judged by the joint angle at each finger's PIP joint (MCP–PIP–tip): at least `150` degrees counts as extended and at most `130` degrees as curled. Each pose owns one action. An active pointer session takes priority; otherwise the engine checks the open palm, index-only, two-finger, and three-finger poses in that order. Moving into a different pose resets the movement anchors of the others.
 
 ## Keeping gestures apart
 
 Webcam landmarks are noisy, and a hand passes through other poses while changing shape. `GestureEngine` therefore runs each frame through four stages, so one bad frame or a transition is not taken for a different gesture:
 
 1. **Per-frame classification** (`_classify`) judges finger angles and pinch ratios on that frame alone.
-2. **Pose stabilizer.** The open-palm, index-only, and two-finger poses feed one *stable pose* (HUD: `Pose:`). With no stable pose, a recognized pose takes over at once. A stable pose survives up to `POSE_RELEASE_FRAMES - 1` (2) mismatched frames, such as a dropped detection or a finger near its angle limit, so a scroll or swipe in progress keeps its anchor. Another pose must be seen on `POSE_SWITCH_FRAMES` (2) consecutive frames to take over, so a single stray frame cannot start a different action.
+2. **Pose stabilizer.** The open-palm, index-only, two-finger, and three-finger poses feed one *stable pose* (HUD: `Pose:`). With no stable pose, a recognized pose takes over at once. A stable pose survives up to `POSE_RELEASE_FRAMES - 1` (2) mismatched frames, such as a dropped detection or a finger near its angle limit, so a scroll or swipe in progress keeps its anchor. Another pose must be seen on `POSE_SWITCH_FRAMES` (2) consecutive frames to take over, so a single stray frame cannot start a different action.
 3. **Routing.** The pointer session or the stable pose owns the hand and drives exactly one action. During gap frames, motion tracking pauses rather than resets.
 4. **Pinch filter.** A pinch must be seen on `PINCH_CONFIRM_FRAMES` (2) consecutive frames before it clicks. It then stays *held*, as the same button, until its ratio opens past `PINCH_RELEASE_THRESHOLD` (0.6). The gap above `PINCH_THRESHOLD` (hysteresis) means a pinch that flickers while held clicks once, and a held left pinch cannot turn into a right-click as the thumb slides.
 
@@ -79,7 +80,7 @@ Further rules separate specific pairs:
 3. **Click.** Pinch the thumb to the index tip for a left-click or to the middle tip for a right-click, and hold it for two frames. No open-palm arming is needed while pointing. Open the pinch clearly (ratio above 0.6) before the next click. As soon as either pinch ratio drops below `POINTER_FREEZE_PINCH_RATIO` (0.7), before the click registers, the cursor freezes (HUD: `frozen - finish the pinch to click`), so the click lands where you aimed. Open the pinch to resume movement. The usual 1.5-second click cooldown applies.
 4. **Reposition.** While pointing, the cursor stops whenever tracking is lost; bring your hand back to a comfortable spot and carry on. To reach a far edge, move, stop pointing, return your hand, and point again.
 5. **Stop pointing.** Open the ring and pinky (for example into an open palm) for `POINTER_EXIT_FRAMES` (3) frames, or take the hand out of view. Detection gaps shorter than that do not end the session.
-6. **Other gestures.** While pointing, scrolling and tab/history swipes are off, even if the index and middle straighten. Stop pointing first, then use the open palm, two-finger, or index-only pose. A pose passed through while forming another one, or a claw that is moving, does not start pointing.
+6. **Other gestures.** While pointing, scrolling and tab/window/history swipes are off, even if the index and middle straighten. Stop pointing first, then use the open palm, two-finger, three-finger, or index-only pose. A pose passed through while forming another one, or a claw that is moving, does not start pointing.
 
 **Emergency stop:** move the physical mouse into a screen corner. PyAutoGUI's fail-safe stops the app; hand-driven movement keeps one pixel away from the edges, so it never triggers the fail-safe by itself.
 
@@ -94,7 +95,7 @@ Further rules separate specific pairs:
 
   Flexion is smoothed over frames (`POINTER_FLEX_SMOOTHING_ALPHA`, 0.5) because depth estimates jitter. While arming, up to `POINTER_ARM_GRACE_FRAMES` (2) frames without the claw pause the count instead of restarting it; another pose taking over still restarts it.
 
-  The two-finger and index-only poses additionally require their extended fingers to be below `POINTER_CLAW_MIN_FLEX_DEGREES` in 3D, so a claw is never taken for a swipe pose.
+  The two-finger, three-finger, and index-only poses additionally require their extended fingers to be below `POINTER_CLAW_MIN_FLEX_DEGREES` in 3D, so a claw is never taken for a swipe pose.
 - **Without depth (YOLO)**, the 2D rules apply: ring and pinky curled (at most 130 degrees), index and middle bent more than `POINTER_MIN_FINGER_ANGLE_DEGREES` (100, i.e. not a fist), not both straight (that is the two-finger tab pose), and not the index-only pose.
 - The HUD's `Flex 3D I/M/R/P` line shows each finger's 3D flexion next to the claw band. If the claw is not recognized, compare the index and middle values with the band; if straight fingers read above 35, raise `POINTER_CLAW_MIN_FLEX_DEGREES`.
 - Once started, the session is held by the ring and pinky alone, so pinching or straightening the index cannot end it or trigger a swipe.
@@ -127,6 +128,12 @@ Tab switching uses its own pose so it cannot be confused with scrolling: extend 
 
 After a switch, bringing the hand back is ignored for `SWIPE_RETURN_LOCKOUT_SEC` or until the pose is released, so the return stroke does not switch back. To switch several tabs in one direction, swipe, return, and swipe again without releasing the pose. The pose is not recognized while either pinch ratio is at or below `PINCH_THRESHOLD`, so a right-click pinch with straight fingers is never taken for a tab swipe. The open palm only scrolls: horizontal open-palm movement does nothing. While the pose is held, pinch actions are suppressed. The translator adds a 1-second cooldown after a tab switch, during which clicks and history navigation are also ignored. The HUD shows whether the two-finger tab pose is currently detected.
 
+## Window switching
+
+Window switching works like tab switching with one more finger: extend the index, middle, and ring fingers and curl the pinky (PIP joint angles at least 150 and at most 130 degrees); thumb pose does not matter. With depth, the index and middle must also be straight in 3D, and the pose is not recognized while either pinch ratio is at or below `PINCH_THRESHOLD`, exactly as for the two-finger pose. The HUD shows `WINDOWS`. Swipe the wrist sideways by `WINDOW_SWIPE_DISTANCE_RATIO` hand sizes within `SWIPE_WINDOW_SEC`: right-to-left in the camera image emits `PREVIOUS_WINDOW` (Alt+Shift+Tab), and left-to-right emits `NEXT_WINDOW` (Alt+Tab). The return-stroke lockout, pinch suppression, and 1-second navigation cooldown are the same as for tab swipes.
+
+Each swipe sends one Alt+Tab press, so "next" toggles between the two most recently used windows rather than cycling through all of them, and "previous" goes to the least recently used window. Windows ignores an Alt+Tab whose keys go down and up in the same instant, so the translator holds the modifiers for `WINDOW_SWITCH_KEY_HOLD_SEC` (0.05 s, in `src/translation/command_translator.py`) before and after the Tab press. The status overlay itself is excluded from Alt+Tab. The HUD shows whether the three-finger window pose is currently detected.
+
 ## Pinch re-arming after scrolling
 
 When vertical scrolling is detected, pinch input is disarmed even while the hand remains open. Release the open-palm pose, then present a fresh upright, camera-facing open palm before pinching again. This avoids interpreting the end of a scroll as an intentional pinch.
@@ -137,7 +144,7 @@ History navigation uses wrist landmark 0 and a swipe-distance ratio. The pose re
 
 ## Tuning with the HUD
 
-Press **D** in the video window to switch from the compact HUD (mode and hint only) to the detailed readout. It shows the gesture and raw classifier state, the pointer state (off, arming, moving, or frozen), the stable pose, the pinch gate (armed, held, direct while pointing, or waiting for an upright palm), per-finger curl ratios and 3D flexion (index/middle/ring/pinky), whether the index-only and two-finger poses are detected, and both pinch ratios. Use these values when tuning gesture rules against real webcam poses.
+Press **D** in the video window to switch from the compact HUD (mode and hint only) to the detailed readout. It shows the gesture and raw classifier state, the pointer state (off, arming, moving, or frozen), the stable pose, the pinch gate (armed, held, direct while pointing, or waiting for an upright palm), per-finger curl ratios and 3D flexion (index/middle/ring/pinky), whether the index-only, two-finger, and three-finger poses are detected, and both pinch ratios. Use these values when tuning gesture rules against real webcam poses.
 
 Defaults are centralized in `src/config.py`:
 
@@ -153,6 +160,7 @@ Defaults are centralized in `src/config.py`:
 - `SCROLL_MAX_HAND_SIZES_PER_SEC = 2.5`
 - `HISTORY_SWIPE_DISTANCE_RATIO = 1.25`
 - `TAB_SWIPE_DISTANCE_RATIO = 1.25`
+- `WINDOW_SWIPE_DISTANCE_RATIO = 1.25`
 - `SWIPE_WINDOW_SEC = 0.8`, `SWIPE_RETURN_LOCKOUT_SEC = 1.2`
 - `TAB_SWITCH_COOLDOWN_SEC = 1.0` (navigation cooldown)
 - `POINTER_ENTER_FRAMES = 5`, `POINTER_EXIT_FRAMES = 3`, `POINTER_ARM_MAX_DRIFT_RATIO = 0.35`

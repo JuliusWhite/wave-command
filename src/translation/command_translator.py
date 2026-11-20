@@ -46,6 +46,28 @@ def _send_hotkey(*keys: str) -> None:
     _pyautogui().hotkey(*keys)
 
 
+WINDOW_SWITCH_KEY_HOLD_SEC = 0.05
+
+
+def _send_window_switch(*keys: str) -> None:
+    """Press a window-switch shortcut like a person would.
+
+    Windows ignores an Alt+Tab whose keys go down and up in the same
+    instant, so the modifiers are held briefly around the Tab press.
+    """
+    pyautogui = _pyautogui()
+    *modifiers, key = keys
+    for modifier in modifiers:
+        pyautogui.keyDown(modifier)
+    try:
+        time.sleep(WINDOW_SWITCH_KEY_HOLD_SEC)
+        pyautogui.press(key)
+        time.sleep(WINDOW_SWITCH_KEY_HOLD_SEC)
+    finally:
+        for modifier in reversed(modifiers):
+            pyautogui.keyUp(modifier)
+
+
 def _close_current_window() -> None:
     if sys.platform == "win32":
         _request_windows_foreground_close()
@@ -85,6 +107,8 @@ class CommandTranslator:
         GestureState.PINCH_RIGHT_CLICK: "RIGHT_CLICK",
         GestureState.NEXT_TAB: "NEXT_TAB",
         GestureState.PREVIOUS_TAB: "PREVIOUS_TAB",
+        GestureState.NEXT_WINDOW: "NEXT_WINDOW",
+        GestureState.PREVIOUS_WINDOW: "PREVIOUS_WINDOW",
         GestureState.BACK: "BACK",
         GestureState.FORWARD: "FORWARD",
         GestureState.SCROLL_UP: "SCROLL_UP",
@@ -110,6 +134,7 @@ class CommandTranslator:
         close_window: Callable[[], None] = _close_current_window,
         scroll: Callable[[int], None] = _scroll_mouse,
         hotkey: Callable[..., None] = _send_hotkey,
+        switch_window: Callable[..., None] = _send_window_switch,
     ) -> None:
         if cooldown_sec < 0:
             raise ValueError("cooldown_sec must be non-negative")
@@ -120,6 +145,7 @@ class CommandTranslator:
         self._scroll = scroll
         self._close_window = close_window
         self._hotkey = hotkey
+        self._switch_window = switch_window
         self._previous_gesture = GestureState.IDLE
         self._last_trigger_at = float("-inf")
         self._last_navigation_at = float("-inf")
@@ -167,6 +193,8 @@ class CommandTranslator:
             gesture in {
                 GestureState.NEXT_TAB,
                 GestureState.PREVIOUS_TAB,
+                GestureState.NEXT_WINDOW,
+                GestureState.PREVIOUS_WINDOW,
                 GestureState.BACK,
                 GestureState.FORWARD,
             }
@@ -191,6 +219,14 @@ class CommandTranslator:
             self._last_tab_switch_at = now
         elif gesture == GestureState.PREVIOUS_TAB:
             self._hotkey("ctrl", "shift", "tab")
+            self._last_navigation_at = now
+            self._last_tab_switch_at = now
+        elif gesture == GestureState.NEXT_WINDOW:
+            self._switch_window("alt", "tab")
+            self._last_navigation_at = now
+            self._last_tab_switch_at = now
+        elif gesture == GestureState.PREVIOUS_WINDOW:
+            self._switch_window("alt", "shift", "tab")
             self._last_navigation_at = now
             self._last_tab_switch_at = now
         elif gesture == GestureState.BACK:
