@@ -13,6 +13,7 @@ The action mappings are `PINCH_LEFT_CLICK` → `LEFT_CLICK`, `PINCH_RIGHT_CLICK`
 - `src/recognition/hand_detector.py` owns vision backend loading and frame-to-landmark conversion.
 - If `models/hand-pose.pt` exists, it loads the optional Ultralytics YOLO model (installed from `requirements-yolo.txt`). Its pose head must return exactly 21 landmarks for each hand.
 - Otherwise, MediaPipe Hands supplies the same 21-point layout. Up to two hands can be detected and drawn.
+- `src/recognition/hand_tracker.py` provides `HandTracker`, which picks the one hand that drives gestures. The detector returns hands in no stable order, so the tracker locks onto the first hand that appears and follows it frame to frame by palm centre (wrist and the four finger bases, in normalized image coordinates). In each frame it keeps the hand nearest the last palm position, if within `HAND_TRACK_MAX_JUMP`; other hands are returned as ignored. If the locked hand is not seen, the lock is kept for `HAND_TRACK_LOST_FRAMES` frames (no hand is tracked meanwhile), so a detection dropout cannot hand control to another hand; after that the lock is released and the next hand in view is locked.
 - Each `Keypoint` contains its integer `id`, pixel coordinates `x` and `y`, confidence `conf`, normalized image coordinates `normalized_x` and `normalized_y`, and depth `z` relative to the wrist (MediaPipe only; `None` for YOLO).
 - `src/recognition/gesture_engine.py` evaluates geometry only; it has no camera, model, or OS-control responsibilities.
 - An active pointer session (claw pose held still for `POINTER_ENTER_FRAMES`, kept while the ring and pinky stay curled) takes priority. With depth, the claw is recognized by 3D finger flexion, smoothed over frames, because its fingers bend toward the camera and look straight in 2D. The session reports the palm centre as a `PointerSample` on `GestureResult.pointer`, lets pinches click without open-palm arming, freezes the sample while a pinch forms, and disables scrolling and swipes.
@@ -31,15 +32,15 @@ The action mappings are `PINCH_LEFT_CLICK` → `LEFT_CLICK`, `PINCH_RIGHT_CLICK`
 
 ### Webcam and visualization service
 
-`src/webcam/visualizer.py` owns the OpenCV camera lifecycle, calls a supplied frame-processing function, draws all landmarks and skeleton connections, and renders the HUD. The thumb-to-finger line changes color when either pinch is recognized. By default the HUD is compact: a translucent panel with the current mode in large type (`CURSOR`, `SCROLL`, `TABS`, `HISTORY`, `LEFT CLICK`/`RIGHT CLICK`, `READY`, or `NO HAND`) and a one-line hint, the FPS in the corner, the most recent action as a short banner (for example `NEXT TAB`), and a key reminder. Text has a dark outline so it stays readable on any background. Press **D** to toggle the detailed tuning readout (backend, classifier and filter state, pointer state, stable pose, pinch gate, curl ratios, 3D flexion, swipe-pose detection, and pinch ratios). Press **B** to toggle bypass, **C** to hide the preview (when the overlay is running), and **Q** to exit.
+`src/webcam/visualizer.py` owns the OpenCV camera lifecycle, calls a supplied frame-processing function, draws the tracked hand's landmarks and skeleton connections (ignored hands appear as a thin grey skeleton), and renders the HUD. The thumb-to-finger line changes color when either pinch is recognized. By default the HUD is compact: a translucent panel with the current mode in large type (`CURSOR`, `SCROLL`, `TABS`, `HISTORY`, `LEFT CLICK`/`RIGHT CLICK`, `READY`, or `NO HAND`) and a one-line hint, the FPS in the corner, the most recent action as a short banner (for example `NEXT TAB`), and a key reminder. Text has a dark outline so it stays readable on any background. Press **D** to toggle the detailed tuning readout (backend, classifier and filter state, pointer state, stable pose, pinch gate, curl ratios, 3D flexion, swipe-pose detection, and pinch ratios). Press **B** to toggle bypass, **C** to hide the preview (when the overlay is running), and **Q** to exit.
 
-`src/webcam/overlay.py` provides `StatusOverlay`, a borderless, always-on-top Tk window that mirrors the HUD status (`OverlayStatus`: mode, hint, hand in view, last action, camera visibility, bypass). It is driven from the camera loop: the visualizer calls `show()` with the latest status and `pump()` once per frame, so no extra thread is needed. On Windows it is made non-activating and hidden from the taskbar, so clicking it never steals focus from the browser. Its buttons set flags that the visualizer reads once per frame (`consume_camera_toggle()`, `consume_bypass_toggle()`). With the overlay, the camera preview is optional and is skipped entirely while hidden. The overlay uses the brand palette (light electric blue on deep navy); neutral modes (`READY`, `NO HAND`) are shown in brand blues, while mode colors and the orange `BYPASSED` warning match the HUD.
+`src/webcam/overlay.py` provides `StatusOverlay`, a small, borderless, always-on-top Tk window that mirrors the HUD status (`OverlayStatus`: mode, hint, hand in view, last action, camera visibility, bypass) as a single row of icons: the mode icon in the mode's color, the last action in a blue box, a hand-in-view dot, and pause/play, camera, and close buttons. The hint is not shown in the overlay. Icons come from Segoe Fluent Icons or Segoe MDL2 Assets on Windows, with Unicode fallbacks elsewhere; the mode and action tables (`_MODE_ICONS`, `_ACTION_ICONS`) map the HUD labels to glyphs. Every icon slot has a fixed width, so the window never resizes as the status changes. It opens centered at the top of the screen, `OVERLAY_MARGIN_PX` below the top edge. On Windows the process is made DPI-aware before the window is created; otherwise Windows would scale the overlay up until PyAutoGUI (which makes the process DPI-aware when first imported) is loaded on the first gesture, and the overlay would shrink at that moment. It is driven from the camera loop: the visualizer calls `show()` with the latest status and `pump()` once per frame, so no extra thread is needed. On Windows it is made non-activating and hidden from the taskbar, so clicking it never steals focus from the browser. Its buttons set flags that the visualizer reads once per frame (`consume_camera_toggle()`, `consume_bypass_toggle()`). With the overlay, the camera preview is optional and is skipped entirely while hidden. The overlay uses the brand palette (light electric blue on deep navy); neutral modes (`READY`, `NO HAND`) are shown in brand blues, while mode colors and the orange `BYPASSED` warning match the HUD. Each mode has its own color: amber `SCROLL`, lavender `TABS`, pink `HISTORY`, light blue `CURSOR`, and green clicks.
 
 **Bypass.** `Visualizer.bypassed` turns gesture actions off on demand. Detection and recognition keep running so the overlay and HUD stay live, but `main.py` sends no pointer samples and calls `CommandTranslator.observe()` instead of `process()`. `observe()` tracks the current gesture without acting, so a gesture still held when actions resume is not treated as new and cannot fire a stale click or swipe.
 
 ### Application entry point
 
-`main.py` wires the services together and opens the status overlay when `SHOW_STATUS_OVERLAY` is set (falling back to the camera preview if Tk is unavailable). For each frame, it requests detections, evaluates the first detected hand (or `IDLE` if none), passes the pointer sample to `PointerController` and the gesture state to the translator (or, while bypassed, resets the pointer and only lets the translator observe the gesture), and returns a `FrameState` to the visualizer. The detector is closed even when the camera loop exits with an error.
+`main.py` wires the services together and opens the status overlay when `SHOW_STATUS_OVERLAY` is set (falling back to the camera preview if Tk is unavailable). For each frame, it requests detections, lets `HandTracker` pick the tracked hand, evaluates that hand (or `IDLE` if none), passes the pointer sample to `PointerController` and the gesture state to the translator (or, while bypassed, resets the pointer and only lets the translator observe the gesture), and returns a `FrameState` to the visualizer. The detector is closed even when the camera loop exits with an error.
 
 ### Setup script
 
@@ -54,7 +55,10 @@ OpenCV camera frame (BGR)
 HandDetector.detect(frame)
         |  list[HandPrediction], each with 21 Keypoint values
         v
-GestureEngine.evaluate(first hand or None)
+HandTracker.update(hands)
+        |  tracked hand (first to appear) or None, plus ignored hands
+        v
+GestureEngine.evaluate(tracked hand or None)
         |  GestureResult(state, pinch_distance_ratio, scroll_amount, pointer)
         v
 PointerController.update(pointer)    -> relative cursor movement
@@ -65,7 +69,7 @@ Visualizer updates the status overlay and, when shown, draws
 landmarks, skeleton, pinch line, state, and alert
 ```
 
-The detector may return multiple hands; the visualizer draws all of them, while the initial gesture and translation flow uses the first detection only.
+The detector may return multiple hands. Only the tracked hand (the first to appear, followed until it leaves) drives gestures and translation; the visualizer draws it in full and the others as grey skeletons.
 
 ## 21 hand keypoints
 

@@ -165,6 +165,7 @@ Defaults are centralized in `src/config.py`:
 - `POINTER_ACCEL_START_SPEED = 0.5`, `POINTER_ACCEL_FULL_SPEED = 3.0` (hand sizes per second)
 - `POINTER_INVERT_X = True`
 - `COMMAND_COOLDOWN_SEC = 1.5`
+- `HAND_TRACK_MAX_JUMP = 0.25`, `HAND_TRACK_LOST_FRAMES = 8` (which hand is tracked when several are in view)
 - `HUD_ALERT_DURATION_SEC = 2.5`
 - `SHOW_STATUS_OVERLAY = True`, `SHOW_CAMERA_PREVIEW = False`, `OVERLAY_OPACITY = 0.9`, `OVERLAY_MARGIN_PX = 20`
 - `CAMERA_ID = 0`

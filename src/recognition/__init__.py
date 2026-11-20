@@ -7,6 +7,7 @@ from .gesture_engine import (
     PointerSample,
 )
 from .hand_detector import HandDetector, HandPrediction, Keypoint
+from .hand_tracker import HandTracker
 
 __all__ = [
     "GestureEngine",
@@ -14,6 +15,7 @@ __all__ = [
     "GestureState",
     "HandDetector",
     "HandPrediction",
+    "HandTracker",
     "Keypoint",
     "PointerSample",
 ]

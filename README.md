@@ -44,7 +44,9 @@ Actions are printed to the terminal and shown in the status overlay (and on the 
 
 **Emergency stop:** move the physical mouse into any screen corner; PyAutoGUI's fail-safe stops the app.
 
-**Pause gestures:** click **bypass** in the status overlay (or press **B** in the camera preview) to turn gesture actions off without quitting; click **resume** to turn them back on. See [Run](#run).
+**Pause gestures:** click the **pause** button in the status overlay (or press **B** in the camera preview) to turn gesture actions off without quitting; click **play** to turn them back on. See [Run](#run).
+
+**More than one hand in view:** only the first hand that appeared is used; other hands are ignored (drawn as a thin grey skeleton in the camera preview). Another hand takes over only after the first one has been out of view for a few frames.
 
 If the cursor does not move, press **D** for the detailed view and check the **Pointer** and **Flex 3D** lines: `off` means the shape is not recognized (compare the index and middle flex values with the claw band, and curl the ring and pinky further), `arming` that never completes means the hand is moving or the shape is unsteady, and `frozen for click` means the thumb is too close to a fingertip. See [Development and testing](docs/development-and-testing.md#the-cursor-does-not-move) for tuning.
 
@@ -83,11 +85,19 @@ python scripts/setup_models.py
 python main.py
 ```
 
-Allow webcam access if prompted. A small, always-on-top **status overlay** opens in the top-right corner, styled in the Wave Command electric blue. It shows the current mode with a one-line hint, whether a hand is in view, and the last action. Drag it anywhere with the mouse. It never takes focus, so shortcuts still reach the browser. Its buttons:
+Allow webcam access if prompted. A small, always-on-top **status overlay** opens centered at the top of the screen, styled in the Wave Command electric blue. It is a single row of icons:
 
-- **bypass** / **resume**: turn gesture actions off and back on. While bypassed, the hand is still tracked and the overlay shows `BYPASSED`, but no cursor movement, clicks, scrolls, or shortcuts are sent. A gesture still held when you resume does not fire; release it and repeat it.
-- **show camera** / **hide camera**: open or close the camera preview.
+- **Mode icon**, in the mode's color: check mark (`READY`), crossed-out eye (`NO HAND`), pointer arrow (`CURSOR`), mouse with **L**/**R** (`LEFT CLICK`/`RIGHT CLICK`), up/down chevrons (`SCROLL`), clock (`HISTORY`), stacked pages (`TABS`), or pause (`BYPASSED`).
+- **Last action** in a blue box: arrows for back/forward and scroll up/down, stacked pages with an arrow for next/previous tab, or a mouse with **L**/**R** for clicks. Empty when there is no recent action.
+- **Hand dot:** green while a hand is tracked, orange when none is in view.
+
+Drag it anywhere with the mouse. It never takes focus, so shortcuts still reach the browser. Its buttons:
+
+- **pause** / **play**: turn gesture actions off and back on (play is orange while bypassed). While bypassed, the hand is still tracked and the overlay shows the `BYPASSED` pause icon, but no cursor movement, clicks, scrolls, or shortcuts are sent. A gesture still held when you resume does not fire; release it and repeat it.
+- **camera**: open or close the camera preview (dimmed while the preview is hidden).
 - **✕**: quit Wave Command.
+
+The overlay's icons come from Windows' Segoe Fluent Icons (Windows 11) or Segoe MDL2 Assets (Windows 10); on other systems plain Unicode symbols are used. Mode hints are shown only in the camera preview.
 
 The camera preview is hidden at start. When open, it displays hand landmarks and a compact HUD: the current mode in large type with a one-line hint, FPS, and the last action as a short banner. With the preview focused, press **B** to toggle bypass, **C** to hide the preview, **D** to toggle the detailed tuning readout (raw gesture, pointer and pinch state, poses, finger-curl, 3D flexion, and pinch ratios), and **Q** to quit.
 

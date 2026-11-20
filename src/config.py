@@ -86,6 +86,12 @@ POINTER_ACCEL_FULL_SPEED = 3.0
 # it left in the image, so horizontal motion is inverted for the cursor.
 POINTER_INVERT_X = True
 COMMAND_COOLDOWN_SEC = 1.5
+# With several hands in view, only the first one to appear is used. It is
+# followed by palm position: a hand within this distance (normalized image
+# units) of last frame's palm is the same hand. After this many frames
+# without it, the lock is released and another hand can take over.
+HAND_TRACK_MAX_JUMP = 0.25
+HAND_TRACK_LOST_FRAMES = 8
 HUD_ALERT_DURATION_SEC = 2.5
 WINDOW_NAME = "Wave Command"
 # Small always-on-top status window (mode, hint, hand seen, last action).
@@ -95,7 +101,7 @@ SHOW_STATUS_OVERLAY = True
 # or hidden at any time. Without the overlay the preview is always shown.
 SHOW_CAMERA_PREVIEW = False
 OVERLAY_OPACITY = 0.9
-# Distance of the overlay from the top-right screen corner at start.
+# Distance of the overlay from the top screen edge at start (it is centered).
 OVERLAY_MARGIN_PX = 20
 # MediaPipe Hands / common 21-point hand layout.
 HAND_CONNECTIONS: tuple[tuple[int, int], ...] = (

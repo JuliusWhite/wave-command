@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from ..config import (
@@ -40,6 +40,8 @@ class FrameState:
     pinch_distance_ratio: float | None
     alert: str | None
     diagnostics: GestureDiagnostics | None = None
+    # Hands in view that are not the tracked one; drawn greyed out.
+    ignored_hands: list[HandPrediction] = field(default_factory=list)
 
 
 class Visualizer:
@@ -74,6 +76,7 @@ class Visualizer:
     _POINTER_COLOR = (255, 200, 60)
     _SCROLL_COLOR = (80, 200, 255)
     _NAVIGATION_COLOR = (230, 140, 255)
+    _TABS_COLOR = (250, 139, 167)  # #a78bfa lavender violet
     _OUTLINE_COLOR = (0, 0, 0)
     _PANEL_COLOR = (20, 20, 20)
     _PANEL_OPACITY = 0.6
@@ -192,6 +195,8 @@ class Visualizer:
     def _draw(self, frame: Any, state: FrameState, fps: float) -> None:
         import cv2
 
+        for hand in state.ignored_hands:
+            self._draw_ignored_hand(cv2, frame, hand)
         for hand_index, hand in enumerate(state.hands):
             pinch_tip_index = None
             if hand_index == 0:
@@ -304,7 +309,7 @@ class Visualizer:
             return (
                 "TABS",
                 "swipe sideways: previous / next",
-                self._NAVIGATION_COLOR,
+                self._TABS_COLOR,
             )
         if not state.hands:
             return "NO HAND", "show your hand to the camera", self._MUTED_COLOR
@@ -575,6 +580,21 @@ class Visualizer:
             3,
             cv2.LINE_AA,
         )
+
+    def _draw_ignored_hand(
+        self, cv2: Any, frame: Any, hand: HandPrediction
+    ) -> None:
+        """Thin grey skeleton for a hand that is in view but not tracked."""
+        points = hand.keypoints
+        for start, end in HAND_CONNECTIONS:
+            cv2.line(
+                frame,
+                (round(points[start].x), round(points[start].y)),
+                (round(points[end].x), round(points[end].y)),
+                self._MUTED_COLOR,
+                1,
+                cv2.LINE_AA,
+            )
 
     def _finger_color(self, start: int, end: int) -> tuple[int, int, int]:
         landmark_id = max(start, end)
