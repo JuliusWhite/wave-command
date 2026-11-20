@@ -55,6 +55,7 @@ _MODE_ICONS: dict[str, Icon] = {
 _ACTION_ICONS: dict[str, Icon] = {
     "LEFT CLICK": ("", "◧", "L"),
     "RIGHT CLICK": ("", "◨", "R"),
+    "DOUBLE CLICK": ("", "◧◧", "2"),
     "NEXT TAB": ("", "⧉→", ""),
     "PREVIOUS TAB": ("", "←⧉", ""),
     "NEXT WINDOW": ("", "❐→", ""),

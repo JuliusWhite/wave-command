@@ -12,6 +12,7 @@ from ctypes import wintypes
 
 from ..config import (
     COMMAND_COOLDOWN_SEC,
+    DOUBLE_CLICK_WINDOW_SEC,
     TAB_SWITCH_COOLDOWN_SEC,
 )
 from ..recognition.gesture_engine import GestureState
@@ -36,6 +37,10 @@ def _pyautogui():
 
 def _click_mouse(button: MouseButton) -> None:
     _pyautogui().click(button=button)
+
+
+def _double_click_mouse(button: MouseButton) -> None:
+    _pyautogui().doubleClick(button=button)
 
 
 def _scroll_mouse(amount: int) -> None:
@@ -135,6 +140,8 @@ class CommandTranslator:
         scroll: Callable[[int], None] = _scroll_mouse,
         hotkey: Callable[..., None] = _send_hotkey,
         switch_window: Callable[..., None] = _send_window_switch,
+        double_click: Callable[[MouseButton], None] = _double_click_mouse,
+        double_click_window_sec: float = DOUBLE_CLICK_WINDOW_SEC,
     ) -> None:
         if cooldown_sec < 0:
             raise ValueError("cooldown_sec must be non-negative")
@@ -146,6 +153,11 @@ class CommandTranslator:
         self._close_window = close_window
         self._hotkey = hotkey
         self._switch_window = switch_window
+        self._double_click = double_click
+        self.double_click_window_sec = double_click_window_sec
+        # Time of the last single left click, which a second left pinch can
+        # turn into a double-click.
+        self._last_left_click_at = float("-inf")
         self._previous_gesture = GestureState.IDLE
         self._last_trigger_at = float("-inf")
         self._last_navigation_at = float("-inf")
@@ -184,8 +196,13 @@ class CommandTranslator:
             and now - self._last_tab_switch_at < TAB_SWITCH_COOLDOWN_SEC
         ):
             return None
+        is_double_click = (
+            gesture == GestureState.PINCH_LEFT_CLICK
+            and now - self._last_left_click_at <= self.double_click_window_sec
+        )
         if (
             gesture in self.BUTTONS
+            and not is_double_click
             and now - self._last_trigger_at < self.cooldown_sec
         ):
             return None
@@ -235,9 +252,22 @@ class CommandTranslator:
         elif gesture == GestureState.FORWARD:
             self._hotkey("alt", "right")
             self._last_navigation_at = now
+        elif is_double_click:
+            # Both clicks go out together at the same spot; the first pinch's
+            # click before them only selects, as with a real mouse.
+            self._double_click("left")
+            action = "DOUBLE_CLICK"
+            self._last_trigger_at = now
+            # A third quick pinch is a new single click, after the cooldown.
+            self._last_left_click_at = float("-inf")
         else:
             self._click(self.BUTTONS[gesture])
             self._last_trigger_at = now
+            self._last_left_click_at = (
+                now
+                if gesture == GestureState.PINCH_LEFT_CLICK
+                else float("-inf")
+            )
         # status = (
         #     "Requested"
         #     if gesture == GestureState.FIST_CLOSE_WINDOW

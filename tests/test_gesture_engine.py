@@ -1237,12 +1237,68 @@ class GestureConfusionTests(unittest.TestCase):
             GestureState.PINCH_LEFT_CLICK,
         )
 
+    def _pointer_left_feed(self, engine: GestureEngine):
+        claw = make_pointer_hand()
+        index_tip = claw.keypoints[8]
+
+        def feed(left_ratio: float) -> GestureState:
+            hand = with_thumb_at(
+                claw, index_tip.x - left_ratio * 100.0, index_tip.y
+            )
+            return engine.evaluate(hand).gesture
+
+        return feed
+
+    def test_second_pinch_in_double_click_window_is_looser(self) -> None:
+        current_time = [0.0]
+        engine = GestureEngine(clock=lambda: current_time[0])
+        start_pointer(engine)
+        feed = self._pointer_left_feed(engine)
+
+        # A normal first click.
+        feed(0.2)
+        self.assertEqual(feed(0.2), GestureState.PINCH_LEFT_CLICK)
+        current_time[0] = 0.3
+        feed(1.0)
+        self.assertTrue(engine.diagnostics.double_click_ready)
+        # Within the window, 0.5 (above PINCH_THRESHOLD) clicks on its
+        # first frame.
+        current_time[0] = 0.6
+        self.assertEqual(feed(0.5), GestureState.PINCH_LEFT_CLICK)
+        # The second pinch closes the window.
+        self.assertFalse(engine.diagnostics.double_click_ready)
+
+    def test_loose_pinch_outside_double_click_window_does_not_click(
+        self,
+    ) -> None:
+        current_time = [0.0]
+        engine = GestureEngine(clock=lambda: current_time[0])
+        start_pointer(engine)
+        feed = self._pointer_left_feed(engine)
+
+        feed(0.2)
+        feed(0.2)
+        feed(1.0)
+        current_time[0] = 2.0  # window over
+        for _ in range(3):
+            self.assertEqual(feed(0.5), GestureState.IDLE)
+        self.assertFalse(engine.diagnostics.double_click_ready)
+
+    def test_loose_pinch_without_a_first_click_does_not_click(self) -> None:
+        engine = GestureEngine()
+        start_pointer(engine)
+        feed = self._pointer_left_feed(engine)
+
+        for _ in range(3):
+            self.assertEqual(feed(0.5), GestureState.IDLE)
+
     def test_held_pinch_flicker_clicks_once(self) -> None:
         clicks = []
         translator = CommandTranslator(
             cooldown_sec=0.0,
             emit=lambda _message: None,
             click=clicks.append,
+            double_click=lambda button: clicks.append(f"double-{button}"),
         )
         engine = GestureEngine()
         start_pointer(engine)
@@ -1263,10 +1319,11 @@ class GestureConfusionTests(unittest.TestCase):
             feed(ratio)
         self.assertEqual(clicks, ["left"])
 
+        # Released and pinched again right away: a double-click.
         self.assertEqual(feed(1.0), GestureState.IDLE)
         feed(0.2)
         feed(0.2)
-        self.assertEqual(clicks, ["left", "left"])
+        self.assertEqual(clicks, ["left", "double-left"])
 
     def test_held_left_pinch_does_not_turn_into_right_click(self) -> None:
         engine = GestureEngine()

@@ -51,6 +51,7 @@ The ordering matches MediaPipe Hands:
 | Index + middle + ring extended, pinky curled | Horizontal swipe | `NEXT_WINDOW` / `PREVIOUS_WINDOW` | Alt+Tab / Alt+Shift+Tab |
 | Index only extended | Horizontal swipe | `FORWARD` / `BACK` | Alt+Right / Alt+Left |
 | Thumb tip to index tip | Pinch | `PINCH_LEFT_CLICK` | Left-click |
+| Thumb tip to index tip, again within `DOUBLE_CLICK_WINDOW_SEC` | Second pinch | `PINCH_LEFT_CLICK` | Double-click |
 | Thumb tip to middle tip | Pinch | `PINCH_RIGHT_CLICK` | Right-click |
 
 Finger poses are judged by the joint angle at each finger's PIP joint (MCP–PIP–tip): at least `150` degrees counts as extended and at most `130` degrees as curled. Each pose owns one action. An active pointer session takes priority; otherwise the engine checks the open palm, index-only, two-finger, and three-finger poses in that order. Moving into a different pose resets the movement anchors of the others.
@@ -77,7 +78,7 @@ Further rules separate specific pairs:
 
 1. **Start pointing.** Hold the pinch-ready claw: curl the ring and pinky into the palm, and let the index and middle relax with a slight bend, thumb loosely to the side (as if about to pick something up). Keep it, with the hand still, for `POINTER_ENTER_FRAMES` (5) frames, about 0.2 seconds at 30 FPS. Coming from another pose, that pose must end first, which adds about two frames. The HUD shows `CURSOR` with `hold still... 1/5 … 5/5`, then the click hint (in the detailed view, the *Pointer* line counts `arming 1/5 … 5/5` and then shows `moving cursor`).
 2. **Move.** The cursor follows your palm centre, not a fingertip. Moving your hand to your right moves the cursor right. Movement is relative, like a mouse: slow movement gives about 400 pixels per hand size of travel for precise targeting, and fast movement up to 1600 for crossing the screen.
-3. **Click.** Pinch the thumb to the index tip for a left-click or to the middle tip for a right-click, and hold it for two frames. No open-palm arming is needed while pointing. Open the pinch clearly (ratio above 0.6) before the next click. As soon as either pinch ratio drops below `POINTER_FREEZE_PINCH_RATIO` (0.7), before the click registers, the cursor freezes (HUD: `frozen - finish the pinch to click`), so the click lands where you aimed. Open the pinch to resume movement. The usual 1.5-second click cooldown applies.
+3. **Click.** Pinch the thumb to the index tip for a left-click or to the middle tip for a right-click, and hold it for two frames. No open-palm arming is needed while pointing. Open the pinch clearly (ratio above 0.6) before the next click. As soon as either pinch ratio drops below `POINTER_FREEZE_PINCH_RATIO` (0.7), before the click registers, the cursor freezes (HUD: `frozen - finish the pinch to click`), so the click lands where you aimed. Open the pinch to resume movement. The usual 1.5-second click cooldown applies, except for a double-click: pinch the index again within `DOUBLE_CLICK_WINDOW_SEC` (1 s) and the HUD hint `pinch again to double-click` turns into a double-click (see [Double-click](#double-click)).
 4. **Reposition.** While pointing, the cursor stops whenever tracking is lost; bring your hand back to a comfortable spot and carry on. To reach a far edge, move, stop pointing, return your hand, and point again.
 5. **Stop pointing.** Open the ring and pinky (for example into an open palm) for `POINTER_EXIT_FRAMES` (3) frames, or take the hand out of view. Detection gaps shorter than that do not end the session.
 6. **Other gestures.** While pointing, scrolling and tab/window/history swipes are off, even if the index and middle straighten. Stop pointing first, then use the open palm, two-finger, three-finger, or index-only pose. A pose passed through while forming another one, or a claw that is moving, does not start pointing.
@@ -115,6 +116,18 @@ middle_pinch_ratio = distance(point[4], point[12]) / hand_size
 ```
 
 Outside a pointer session, each pinch requires the engine to recognize an upright, camera-facing open palm first. The wrist-to-middle-MCP axis must point upward and be close to vertical, and the index-to-pinky MCP span must remain broad enough in the image to indicate a palm facing the camera. The open-hand pose arms pinch input; the next confirmed pinch triggers and consumes that activation, so the user must show the upright open palm again before another pinch. Losing the hand, switching to a swipe pose, or waiting longer than `PINCH_ARM_TIMEOUT_SEC` also resets the gate. Every pinch, armed or in a pointer session, passes the confirmation and hold rules in [Keeping gestures apart](#keeping-gestures-apart). Until armed, pinch poses produce `IDLE`. When an index-tip ratio is at or below `PINCH_THRESHOLD`, the state is `PINCH_LEFT_CLICK`. When a middle-tip ratio is at or below the threshold, the state is `PINCH_RIGHT_CLICK`. If both ratios are within the threshold, the smaller ratio must lead by at least `PINCH_DOMINANCE_MARGIN`; otherwise, the pose is treated as ambiguous and produces `IDLE`. The ratio is based on pixel coordinates, and normalizing by hand size reduces sensitivity to how close the hand is to the camera. A missing hand, a low-confidence required landmark, or an invalid/near-zero reference distance produces `IDLE`.
+
+### Double-click
+
+A confirmed single left pinch opens a double-click window of `DOUBLE_CLICK_WINDOW_SEC` (1 s) in the engine (`GestureDiagnostics.double_click_ready`; while pointing, the compact HUD hint reads `pinch again to double-click`). Within it, the second left pinch is detected more easily:
+
+- it counts at `DOUBLE_CLICK_PINCH_THRESHOLD` (0.55) instead of `PINCH_THRESHOLD` (0.45), as long as the index is not curled, the hand is not an open palm, and the thumb is nearer the index than the middle tip;
+- it confirms after `DOUBLE_CLICK_CONFIRM_FRAMES` (1) frame instead of `PINCH_CONFIRM_FRAMES`;
+- outside a pointer session it needs no fresh open-palm arming (swipe poses still block it).
+
+The first pinch must still release past `PINCH_RELEASE_THRESHOLD` (0.6), so a flickering single pinch cannot double-click; keep the looser threshold below that value. The second pinch, or any other click, closes the window, so a third quick pinch uses the normal rules.
+
+The translator keeps a matching window from its last single left click. A left pinch within it skips `COMMAND_COOLDOWN_SEC` and sends PyAutoGUI's `doubleClick` (action `DOUBLE_CLICK`), so both clicks of the double-click go out together at the same position; Windows' own double-click time and hand movement between the pinches do not matter. The earlier single click only selects, as with a mouse. Right clicks never start a double-click. A left pinch after the window but within the click cooldown is still ignored.
 
 The close-window gesture and action are temporarily disabled. Their classifier code in `src/recognition/gesture_engine.py` and action mapping/dispatch branch in `src/translation/command_translator.py` are commented out; related tests are skipped so they can be restored later.
 
@@ -173,6 +186,7 @@ Defaults are centralized in `src/config.py`:
 - `POINTER_ACCEL_START_SPEED = 0.5`, `POINTER_ACCEL_FULL_SPEED = 3.0` (hand sizes per second)
 - `POINTER_INVERT_X = True`
 - `COMMAND_COOLDOWN_SEC = 1.5`
+- `DOUBLE_CLICK_WINDOW_SEC = 1.0`, `DOUBLE_CLICK_PINCH_THRESHOLD = 0.55`, `DOUBLE_CLICK_CONFIRM_FRAMES = 1`
 - `HAND_TRACK_MAX_JUMP = 0.25`, `HAND_TRACK_LOST_FRAMES = 8` (which hand is tracked when several are in view)
 - `HUD_ALERT_DURATION_SEC = 2.5`
 - `SHOW_STATUS_OVERLAY = True`, `SHOW_CAMERA_PREVIEW = False`, `OVERLAY_OPACITY = 0.9`, `OVERLAY_MARGIN_PX = 20`

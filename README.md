@@ -14,16 +14,18 @@ This iteration focuses on a small set of common actions, prioritizing web-browse
 | Index, middle, and ring fingers extended, pinky curled | Swipe sideways | Switch window (Alt+Tab / Alt+Shift+Tab) |
 | Only the index finger extended | Swipe sideways | Browser back / forward (Alt+Left / Alt+Right) |
 | Thumb tip to index tip | Pinch | Left-click |
+| Thumb tip to index tip, twice within 1 s | Pinch, open, pinch | Double-click |
 | Thumb tip to middle tip | Pinch | Right-click |
 
 Swipe directions are measured in the (unmirrored) camera image: right-to-left means previous tab, previous window, or back, and left-to-right means next tab, next window, or forward.
 
 - **Cursor:** see [Moving the cursor](#moving-the-cursor) below.
 - **Pinches outside pointing** must be armed by showing an upright open palm first, and each pinch uses up the arming. The pinch threshold is `0.45` times the wrist-to-middle-MCP hand size, so clicks register before the fingertips touch. If both pinch ratios are within the threshold but differ by less than `0.08`, the pose is ambiguous and does not click.
+- **Double-click:** after a left click, a 1-second window opens. A second left pinch within it sends a double-click, and it is easier to make: it counts from a pinch ratio of `0.55`, on its first frame, and needs no open palm. The first click selects and the double-click opens, as with a mouse. The window closes after the second pinch, so a third quick pinch is a normal click again.
 - **Scrolling** starts after about `0.15` hand sizes of vertical movement. It disarms pinches: release the open palm and present it again before pinching.
 - **Tab, window, and history** swipes must be brisk (within 0.8 s). Bringing the hand back is ignored, so the return stroke does not undo the action; swipe the same way again to repeat.
 - **Window switching** sends a single Alt+Tab, so repeated "next" swipes alternate between the two most recently used windows, and "previous" (Alt+Shift+Tab) jumps to the least recently used one. Alt is held down briefly around the Tab press, because Windows ignores an instant Alt+Tab.
-- **Cooldowns:** clicks 1.5 s; tab, window, and history navigation 1 s. After a tab or window switch, clicks and history are also paused for 1 s.
+- **Cooldowns:** clicks 1.5 s (except the second pinch of a double-click); tab, window, and history navigation 1 s. After a tab or window switch, clicks and history are also paused for 1 s.
 
 Actions are printed to the terminal and shown in the status overlay (and on the video HUD when the camera preview is open). Scrolling acts on the window under the cursor. See [docs/recognition-and-gestures.md](docs/recognition-and-gestures.md#cursor-control) for the full pointing walkthrough. The close-window gesture is temporarily disabled. These boundaries do not limit the broader project direction.
 
@@ -40,7 +42,7 @@ Actions are printed to the terminal and shown in the status overlay (and on the 
 
 2. **Hold it still for a moment** (5 frames, about 0.2 seconds) facing the camera. The video window shows `CURSOR` with `hold still... 1/5 … 5/5`, then `pinch thumb + index/middle to click`.
 3. **Move your whole hand**, keeping the shape. The cursor follows the centre of your palm, like sliding a mouse on a desk: hand right moves the cursor right, hand up moves it up. Slow movement gives small, precise steps; quick movement crosses the screen.
-4. **Click** by touching your thumb to the index fingertip (left-click) or the middle fingertip (right-click) for a moment. No open palm is needed first. The cursor freezes just before the click (`frozen - finish the pinch to click`), so it clicks where you aimed. Open the fingers clearly before the next click; one pinch is one click.
+4. **Click** by touching your thumb to the index fingertip (left-click) or the middle fingertip (right-click) for a moment. No open palm is needed first. The cursor freezes just before the click (`frozen - finish the pinch to click`), so it clicks where you aimed. Open the fingers clearly before the next click; one pinch is one click. To **double-click**, open and pinch the index again within 1 second; the hint shows `pinch again to double-click` while you can.
 5. **Reposition** like lifting a mouse: drop the hand out of view, bring it back somewhere comfortable, and point again. The cursor does not jump.
 6. **Stop** by opening your hand. The cursor stays where it is, and the other gestures work again. Scrolling and swipes are off while pointing.
 
@@ -90,7 +92,7 @@ python main.py
 Allow webcam access if prompted. A small, always-on-top **status overlay** opens centered at the top of the screen, styled in the Wave Command electric blue. It is a single row of icons:
 
 - **Mode icon**, in the mode's color: check mark (`READY`), crossed-out eye (`NO HAND`), pointer arrow (`CURSOR`), mouse with **L**/**R** (`LEFT CLICK`/`RIGHT CLICK`), up/down chevrons (`SCROLL`), clock (`HISTORY`), stacked pages (`TABS`), task view (`WINDOWS`), or pause (`BYPASSED`, in the overlay's blue).
-- **Last action** in a blue box: arrows for back/forward and scroll up/down, stacked pages with an arrow for next/previous tab, task view with an arrow for next/previous window, or a mouse with **L**/**R** for clicks. Empty when there is no recent action.
+- **Last action** in a blue box: arrows for back/forward and scroll up/down, stacked pages with an arrow for next/previous tab, task view with an arrow for next/previous window, or a mouse with **L**/**R** for clicks (**2** for a double-click). Empty when there is no recent action.
 - **Hand dot:** green while a hand is tracked, orange when none is in view. While bypassed it stays orange, even with a hand in view, because the hand drives nothing.
 
 Drag it anywhere with the mouse. It never takes focus, so shortcuts still reach the browser. Its buttons:

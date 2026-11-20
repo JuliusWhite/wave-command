@@ -291,11 +291,12 @@ class Visualizer:
         if state.gesture == GestureState.PINCH_RIGHT_CLICK:
             return "RIGHT CLICK", "open fingers to release", self._PINCH_COLOR
         if diagnostics.pointer_active:
-            hint = (
-                "frozen - finish the pinch to click"
-                if diagnostics.pointer_frozen
-                else "pinch thumb + index/middle to click"
-            )
+            if diagnostics.double_click_ready and not diagnostics.pinch_held:
+                hint = "pinch again to double-click"
+            elif diagnostics.pointer_frozen:
+                hint = "frozen - finish the pinch to click"
+            else:
+                hint = "pinch thumb + index/middle to click"
             return "CURSOR", hint, self._POINTER_COLOR
         if diagnostics.pointer_arming_frames:
             return (

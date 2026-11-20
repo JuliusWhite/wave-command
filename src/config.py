@@ -89,6 +89,17 @@ POINTER_ACCEL_FULL_SPEED = 3.0
 # it left in the image, so horizontal motion is inverted for the cursor.
 POINTER_INVERT_X = True
 COMMAND_COOLDOWN_SEC = 1.5
+# A second left pinch within this many seconds of a left click sends a
+# double-click (both clicks at once, so Windows' own double-click time and
+# small hand movement between the pinches do not matter). It skips the click
+# cooldown above.
+DOUBLE_CLICK_WINDOW_SEC = 1.0
+# During that window the second left pinch is easier to make: it counts at
+# this (looser) pinch ratio, after this many frames, and needs no open palm.
+# Keep the ratio below PINCH_RELEASE_THRESHOLD, or the first pinch could
+# never release.
+DOUBLE_CLICK_PINCH_THRESHOLD = 0.55
+DOUBLE_CLICK_CONFIRM_FRAMES = 1
 # With several hands in view, only the first one to appear is used. It is
 # followed by palm position: a hand within this distance (normalized image
 # units) of last frame's palm is the same hand. After this many frames

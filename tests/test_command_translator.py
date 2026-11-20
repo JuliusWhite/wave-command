@@ -61,8 +61,10 @@ class CommandTranslatorTests(unittest.TestCase):
     def test_left_click_triggers_once_and_rearms_after_idle(self) -> None:
         messages: list[str] = []
         buttons: list[str] = []
+        current_time = [10.0]
         translator = CommandTranslator(
             cooldown_sec=0,
+            clock=lambda: current_time[0],
             emit=messages.append,
             click=buttons.append,
         )
@@ -70,6 +72,7 @@ class CommandTranslatorTests(unittest.TestCase):
         first = translator.process(GestureState.PINCH_LEFT_CLICK)
         held = translator.process(GestureState.PINCH_LEFT_CLICK)
         translator.process(GestureState.IDLE)
+        current_time[0] = 12.0  # past the double-click window
         second = translator.process(GestureState.PINCH_LEFT_CLICK)
 
         self.assertIsNotNone(first)
@@ -320,10 +323,59 @@ class CommandTranslatorTests(unittest.TestCase):
 
         translator.process(GestureState.PINCH_LEFT_CLICK)
         translator.process(GestureState.IDLE)
-        current_time[0] = 11.0
+        # Past the double-click window, but still within the click cooldown.
+        current_time[0] = 11.25
         self.assertIsNone(translator.process(GestureState.PINCH_LEFT_CLICK))
         self.assertEqual(len(messages), 1)
         self.assertEqual(buttons, ["left"])
+
+    def test_second_left_pinch_within_window_double_clicks(self) -> None:
+        messages: list[str] = []
+        clicks: list[str] = []
+        current_time = [10.0]
+        translator = CommandTranslator(
+            cooldown_sec=1.5,
+            clock=lambda: current_time[0],
+            emit=messages.append,
+            click=lambda button: clicks.append(button),
+            double_click=lambda button: clicks.append(f"double-{button}"),
+        )
+
+        translator.process(GestureState.PINCH_LEFT_CLICK)
+        translator.process(GestureState.IDLE)
+        current_time[0] = 10.8
+        double = translator.process(GestureState.PINCH_LEFT_CLICK)
+        translator.process(GestureState.IDLE)
+        # A third quick pinch does not double-click again; the click
+        # cooldown applies from the double-click.
+        current_time[0] = 11.2
+        third = translator.process(GestureState.PINCH_LEFT_CLICK)
+
+        self.assertEqual(clicks, ["left", "double-left"])
+        self.assertIsNotNone(double)
+        self.assertIn("DOUBLE_CLICK (Executed)", messages[1])
+        self.assertIsNone(third)
+
+    def test_right_click_never_starts_a_double_click(self) -> None:
+        clicks: list[str] = []
+        current_time = [10.0]
+        translator = CommandTranslator(
+            cooldown_sec=0,
+            clock=lambda: current_time[0],
+            emit=lambda _message: None,
+            click=lambda button: clicks.append(button),
+            double_click=lambda button: clicks.append(f"double-{button}"),
+        )
+
+        translator.process(GestureState.PINCH_RIGHT_CLICK)
+        translator.process(GestureState.IDLE)
+        current_time[0] = 10.5
+        translator.process(GestureState.PINCH_RIGHT_CLICK)
+        translator.process(GestureState.IDLE)
+        current_time[0] = 11.0
+        translator.process(GestureState.PINCH_LEFT_CLICK)
+
+        self.assertEqual(clicks, ["right", "right", "left"])
 
     def test_gesture_held_through_bypass_does_not_fire_on_resume(
         self,

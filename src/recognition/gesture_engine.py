@@ -12,6 +12,9 @@ from math import acos, degrees, hypot, sqrt
 
 from ..config import (
     CONFIDENCE_THRESHOLD,
+    DOUBLE_CLICK_CONFIRM_FRAMES,
+    DOUBLE_CLICK_PINCH_THRESHOLD,
+    DOUBLE_CLICK_WINDOW_SEC,
     HISTORY_SWIPE_DISTANCE_RATIO,
     PINCH_ARM_TIMEOUT_SEC,
     PINCH_CONFIRM_FRAMES,
@@ -133,6 +136,7 @@ class GestureDiagnostics:
     open_hand: bool = False
     pinch_enabled: bool = False
     pinch_held: bool = False
+    double_click_ready: bool = False
     index_only_hand: bool = False
     two_finger_hand: bool = False
     three_finger_hand: bool = False
@@ -278,6 +282,10 @@ class GestureEngine:
         self._pinch_candidate: GestureState | None = None
         self._pinch_candidate_frames = 0
         self._pinch_held: GestureState | None = None
+        # Time of the last single left click; a second left pinch soon after
+        # it is a double-click and is detected with looser rules.
+        self._left_click_at = float("-inf")
+        self._double_click_ready = False
         self._scroll_last_x: float | None = None
         self._scroll_last_y: float | None = None
         self._scroll_last_size: float | None = None
@@ -330,6 +338,15 @@ class GestureEngine:
             self._smoothed_flex = [None, None, None, None]
         raw, diagnostics = self._classify(hand)
         raw_pinch = raw.gesture if raw.gesture in PINCH_GESTURES else None
+        self._double_click_ready = (
+            now - self._left_click_at <= DOUBLE_CLICK_WINDOW_SEC
+        )
+        if (
+            raw_pinch is None
+            and self._double_click_ready
+            and self._is_loose_left_pinch(diagnostics)
+        ):
+            raw_pinch = GestureState.PINCH_LEFT_CLICK
         self._pointer_sample = None
         pointer_frozen = False
 
@@ -337,7 +354,7 @@ class GestureEngine:
         pointer_session = self._update_pointer_session(diagnostics, pose)
 
         if pointer_session:
-            result = self._evaluate_pointer(raw, raw_pinch, diagnostics)
+            result = self._evaluate_pointer(raw, raw_pinch, diagnostics, now)
             pointer_frozen = (
                 self._pointer_sample is not None
                 and self._pointer_sample.frozen
@@ -357,6 +374,9 @@ class GestureEngine:
             ),
             pinch_enabled=self._pinch_enabled,
             pinch_held=self._pinch_held is not None,
+            double_click_ready=(
+                now - self._left_click_at <= DOUBLE_CLICK_WINDOW_SEC
+            ),
             stable_pose=pose,
             pointer_arming_frames=self._pointer_arming_frames,
             pointer_active=pointer_session,
@@ -370,6 +390,7 @@ class GestureEngine:
         raw: GestureResult,
         raw_pinch: GestureState | None,
         diagnostics: GestureDiagnostics,
+        now: float,
     ) -> GestureResult:
         """Pointing owns the hand: no scrolling or swipes, pinches click.
 
@@ -382,7 +403,9 @@ class GestureEngine:
             and diagnostics.palm_y is not None
             and diagnostics.hand_size is not None
         )
-        pinch = self._filter_pinch(raw_pinch, diagnostics, allowed=tracking)
+        pinch = self._filter_pinch(
+            raw_pinch, diagnostics, allowed=tracking, now=now
+        )
         if tracking:
             assert diagnostics.palm_x is not None
             assert diagnostics.palm_y is not None
@@ -423,14 +446,22 @@ class GestureEngine:
         """Route a non-pointing frame to the action of its stable pose."""
         self._update_pinch_arming(hand, diagnostics, pose, now)
         # Swipe poses never pinch: a thumb drifting toward a finger while
-        # swiping must not click.
+        # swiping must not click. The second pinch of a double-click needs
+        # no fresh open palm.
         pinch = self._filter_pinch(
             raw_pinch,
             diagnostics,
             allowed=(
-                self._pinch_enabled
+                (
+                    self._pinch_enabled
+                    or (
+                        self._double_click_ready
+                        and raw_pinch == GestureState.PINCH_LEFT_CLICK
+                    )
+                )
                 and pose in {HandPose.NONE, HandPose.OPEN_PALM}
             ),
+            now=now,
         )
         if pinch is not None:
             # A held pinch owns the hand; no motion is tracked meanwhile.
@@ -642,14 +673,16 @@ class GestureEngine:
         raw_pinch: GestureState | None,
         diagnostics: GestureDiagnostics,
         allowed: bool,
+        now: float,
     ) -> GestureState | None:
         """Confirm a pinch over frames, then hold it until clearly released.
 
         A pinch must be seen ``PINCH_CONFIRM_FRAMES`` times in a row before
-        it clicks. It then stays held, as the same button, until its ratio
-        opens past ``PINCH_RELEASE_THRESHOLD`` or its landmarks are lost.
-        The translator acts on the start of a held pinch, so one physical
-        pinch is one click.
+        it clicks (``DOUBLE_CLICK_CONFIRM_FRAMES`` for the second left pinch
+        of a double-click). It then stays held, as the same button, until
+        its ratio opens past ``PINCH_RELEASE_THRESHOLD`` or its landmarks
+        are lost. The translator acts on the start of a held pinch, so one
+        physical pinch is one click.
         """
         if self._pinch_held is not None:
             held_ratio = (
@@ -673,7 +706,16 @@ class GestureEngine:
         else:
             self._pinch_candidate = raw_pinch
             self._pinch_candidate_frames = 1
-        if self._pinch_candidate_frames < PINCH_CONFIRM_FRAMES:
+        is_second_left_pinch = (
+            self._double_click_ready
+            and raw_pinch == GestureState.PINCH_LEFT_CLICK
+        )
+        required_frames = (
+            DOUBLE_CLICK_CONFIRM_FRAMES
+            if is_second_left_pinch
+            else PINCH_CONFIRM_FRAMES
+        )
+        if self._pinch_candidate_frames < required_frames:
             return None
 
         self._pinch_held = raw_pinch
@@ -681,7 +723,32 @@ class GestureEngine:
         self._pinch_candidate_frames = 0
         # The click consumes the open-palm arming.
         self._pinch_enabled = False
+        # A single left click opens the double-click window; the second
+        # pinch (or any other click) closes it.
+        self._left_click_at = (
+            now
+            if raw_pinch == GestureState.PINCH_LEFT_CLICK
+            and not is_second_left_pinch
+            else float("-inf")
+        )
         return raw_pinch
+
+    def _is_loose_left_pinch(self, diagnostics: GestureDiagnostics) -> bool:
+        """A left pinch by the looser double-click threshold.
+
+        The index must not be curled, the hand must not be an open palm,
+        and the thumb must be nearer the index than the middle fingertip.
+        """
+        left = diagnostics.left_pinch_ratio
+        right = diagnostics.right_pinch_ratio
+        index_curl = diagnostics.curl_ratios[0]
+        return (
+            left is not None
+            and left <= DOUBLE_CLICK_PINCH_THRESHOLD
+            and (right is None or left < right)
+            and not (index_curl is not None and index_curl < 1.0)
+            and not diagnostics.open_hand
+        )
 
     def _update_pointer_session(
         self,
