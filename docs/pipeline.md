@@ -65,7 +65,7 @@ Camera frame
 ## Output and controls
 
 - Terminal: a message identifying the executed click, scroll, tab, window, or history action.
-- Status overlay: small always-on-top row of icons, centered at the top of the screen: mode icon, last action, hand-in-view dot, and **pause**/**play** (bypass), **camera** (show/hide preview), and **✕** (quit) buttons.
+- Status overlay: small always-on-top rounded card, docked at the top center of the screen: mode icon, mode name with hand-in-view dot, hint or last action, last action icon, **pause**/**play** (bypass), **camera** (show/hide preview), and **✕** (quit) buttons, and a hide chevron that shrinks it to a small tab.
 - Video window (optional): hand skeleton, colored finger bones, gesture and raw state, pointer state, pinch gate, detected swipe poses, curl and pinch ratios, FPS, and alert.
 - Keyboard: index-only swipes send Alt+Left or Alt+Right to navigate history; two-finger swipes send Ctrl+Tab or Ctrl+Shift+Tab; three-finger swipes send Alt+Tab or Alt+Shift+Tab; in the video window, **B** toggles bypass, **C** hides the preview, **D** toggles the detailed HUD, and **Q** quits.
 - Mouse: the claw pose moves the cursor; pinches click and open-palm vertical movements scroll at the current cursor position. Moving the physical mouse into a screen corner triggers PyAutoGUI's fail-safe and stops the app.

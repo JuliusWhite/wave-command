@@ -79,7 +79,7 @@ Check that the compact HUD shows `TABS` (or, in the detailed view, `Two-finger t
 
 ### Window switching does not happen
 
-First check the overlay's last-action box when you swipe. If the next/previous window icon appears but the window does not change, the swipe was detected and the problem is the key press: make sure at least two windows are open, and remember that "next" toggles between the two most recently used windows. If no icon appears, the swipe was not detected: check that the HUD shows `WINDOWS` (or, in the detailed view, `Three-finger window pose: detected`) throughout the swipe. Index, middle, and ring must be straight and the pinky clearly curled; a ring finger that relaxes between the extended and curled angles during the movement drops the pose. The distance, timing, and cooldown rules are the same as for tab switching, using `WINDOW_SWIPE_DISTANCE_RATIO`.
+First check the overlay's last-action tile when you swipe. If the next/previous window icon appears but the window does not change, the swipe was detected and the problem is the key press: make sure at least two windows are open, and remember that "next" toggles between the two most recently used windows. If no icon appears, the swipe was not detected: check that the HUD shows `WINDOWS` (or, in the detailed view, `Three-finger window pose: detected`) throughout the swipe. Index, middle, and ring must be straight and the pinky clearly curled; a ring finger that relaxes between the extended and curled angles during the movement drops the pose. The distance, timing, and cooldown rules are the same as for tab switching, using `WINDOW_SWIPE_DISTANCE_RATIO`.
 
 ### Scrolling does not start
 

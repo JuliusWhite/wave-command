@@ -1,13 +1,14 @@
 """Always-on-top status window, so the camera preview is optional.
 
-The overlay is a small borderless panel that stays above other windows and
-shows, as icons, the current mode, the last action, and whether a hand is
-seen, in the same colors as the camera HUD. It is driven from the camera
+The overlay is a small rounded card that stays above other windows and
+shows the current mode, the last action, and whether a hand is seen, in the
+same colors as the camera HUD. It is driven from the camera
 loop: call ``show`` with the latest status and ``pump`` once per frame.
 """
 
 from __future__ import annotations
 
+import math
 import sys
 from dataclasses import dataclass
 from typing import Any
@@ -28,6 +29,11 @@ class OverlayStatus:
     action: str | None
     camera_visible: bool
     bypassed: bool = False
+
+
+def _hex_to_rgb(color: str) -> tuple[int, ...]:
+    """Convert a Tk ``#rrggbb`` string to (red, green, blue)."""
+    return tuple(int(color[i:i + 2], 16) for i in (1, 3, 5))
 
 
 def bgr_to_hex(color: Color) -> str:
@@ -71,6 +77,8 @@ _HAND_DOT = "●"  # filled dot, colored by hand presence
 _PAUSE_ICON: Icon = ("", "⏸", "")
 _PLAY_ICON: Icon = ("", "▶", "")
 _CAMERA_ICON: Icon = ("", "◉", "")
+_HIDE_ICON: Icon = ("", "▲", "")  # chevron up
+_SHOW_ICON: Icon = ("", "▼", "")  # chevron down
 _CLOSE_ICON: Icon = ("", "✕", "")
 
 
@@ -93,23 +101,44 @@ def _make_dpi_aware() -> None:
 
 
 class StatusOverlay:
-    """Small, borderless, always-on-top Tk window showing status as icons.
+    """Rounded, borderless, always-on-top Tk card showing the status.
 
-    One row: the current mode icon, the last action, and a dot that is green
-    when a hand is seen. Drag it anywhere with the mouse. The pause/play
-    button turns gesture actions off and on, the camera button shows or
-    hides the camera preview (dimmed while hidden), and the cross quits
-    Wave Command.
+    Laid out like a "now playing" card: a tile with the current mode icon on
+    the left, the mode name and a hint (or the last action) next to it, a
+    light tile with the last action icon on the right, and the pause/play,
+    camera and close buttons in a column at the edge. A dot after the mode
+    name is green when a hand is seen. Drag it anywhere with the mouse. The
+    pause/play button turns gesture actions off and on, the camera button
+    shows or hides the camera preview (dimmed while hidden), the cross quits
+    Wave Command, and the small chevron at the bottom center shrinks the card
+    to a tab (click the tab to bring it back).
     """
 
-    # Brand palette: light, electric blue on a deep navy panel.
-    _BACKGROUND = "#0b1626"
-    _BORDER = "#2fa8ff"
+    # Brand palette: light, electric blue on a deep navy card.
+    _GRADIENT_LEFT = "#173a63"
+    _GRADIENT_RIGHT = "#0b1626"
+    _TILE = "#1f4a7a"
+    _ACTION_TILE = "#ffffff"
+    _ACTION_TILE_IDLE = "#c9dcef"
     _TEXT = "#e8f6ff"
     _MUTED = "#7ea7cc"
     _LINK = "#5cd0ff"
-    _ACTION_BACKGROUND = "#1e8fff"
-    _ACTION_TEXT = "#ffffff"
+    _ACTION_GLYPH = "#1e8fff"
+    # Painted around the rounded corners and made see-through (Windows).
+    _TRANSPARENT_KEY = "#010203"
+
+    # Layout in pixels at 96 DPI; scaled to the screen's DPI.
+    _HEIGHT = 76
+    _PAD = 11
+    _TILE_SIZE = 54
+    _TEXT_WIDTH = 250
+    _BUTTON_COLUMN = 38
+    _RADIUS = 18
+    _TILE_RADIUS = 12
+    # The small tab left in place while the card is hidden.
+    _TAB_WIDTH = 60
+    _TAB_HEIGHT = 20
+    _TAB_RADIUS = 10
 
     def __init__(self) -> None:
         import tkinter as tk
@@ -120,7 +149,8 @@ class StatusOverlay:
         self._camera_toggle_requested = False
         self._bypass_toggle_requested = False
         self._last_status: OverlayStatus | None = None
-        self._drag_offset = (0, 0)
+        self._drag_offset: tuple[int, int] | None = None
+        self._hidden = False
 
         _make_dpi_aware()
         root = tk.Tk()
@@ -132,12 +162,12 @@ class StatusOverlay:
             root.attributes("-alpha", OVERLAY_OPACITY)
         except tk.TclError:
             pass
-        root.configure(
-            bg=self._BACKGROUND,
-            highlightthickness=1,
-            highlightbackground=self._BORDER,
-            highlightcolor=self._BORDER,
-        )
+        key = self._TRANSPARENT_KEY
+        try:
+            root.attributes("-transparentcolor", key)
+        except tk.TclError:  # not on this platform: corners show the card color
+            key = self._GRADIENT_RIGHT
+        root.configure(bg=key)
         root.protocol("WM_DELETE_WINDOW", self._request_quit)
         self._root = root
 
@@ -145,93 +175,171 @@ class StatusOverlay:
         icon_family = next((name for name in _ICON_FONTS if name in families), None)
         self._use_icon_font = icon_family is not None
         family = icon_family or "Segoe UI Symbol"
+        self._subtitle_font = tkfont.Font(root, family="Segoe UI", size=9)
         badge_font = ("Segoe UI", 7, "bold")
+
+        scale = max(1.0, root.winfo_fpixels("1i") / 96)
+
+        def s(value: float) -> int:
+            return round(value * scale)
+
+        height, pad, tile = s(self._HEIGHT), s(self._PAD), s(self._TILE_SIZE)
+        self._text_width = s(self._TEXT_WIDTH)
+        text_x = pad + tile + s(12)
+        action_x = text_x + self._text_width + s(8)
+        buttons_x = action_x + tile + s(2)
+        width = buttons_x + s(self._BUTTON_COLUMN)
+        tile_y = (height - tile) // 2
+        self._dot_gap = s(6)
+
+        canvas = tk.Canvas(
+            root, width=width, height=height, bg=key,
+            highlightthickness=0, borderwidth=0,
+        )
+        canvas.pack()
+        self._canvas = canvas
+        self._card_size = (width, height)
+        self._card_columns = self._draw_card(
+            canvas, width, height, s(self._RADIUS)
+        )
+        self._top_rounded = False
+
+        # Left tile: the current mode.
+        self._rounded_rect(pad, tile_y, pad + tile, tile_y + tile,
+                           s(self._TILE_RADIUS), fill=self._TILE)
+        self._mode = canvas.create_text(
+            pad + tile // 2, tile_y + tile // 2, font=(family, 18),
+            fill=self._MUTED,
+        )
+        self._mode_badge = canvas.create_text(
+            pad + tile - s(5), tile_y + tile - s(4), anchor="se",
+            font=badge_font, fill=self._MUTED,
+        )
+
+        # Middle: the mode name with the hand dot, and the hint or action.
+        self._title = canvas.create_text(
+            text_x, height // 2, anchor="sw",
+            font=("Segoe UI", 11, "bold"), fill=self._TEXT,
+        )
+        self._hand = canvas.create_text(
+            text_x, height // 2 - s(3), anchor="sw", text=_HAND_DOT,
+            font=("Segoe UI", 8), fill=self._MUTED,
+        )
+        self._subtitle = canvas.create_text(
+            text_x, height // 2 + s(1), anchor="nw",
+            font=self._subtitle_font, fill=self._MUTED,
+        )
+
+        # Right tile: the last action, on white.
+        self._action_tile = self._rounded_rect(
+            action_x, tile_y, action_x + tile, tile_y + tile,
+            s(self._TILE_RADIUS), fill=self._ACTION_TILE_IDLE,
+        )
+        self._action = canvas.create_text(
+            action_x + tile // 2, tile_y + tile // 2, font=(family, 18),
+            fill=self._ACTION_GLYPH,
+        )
+        self._action_badge = canvas.create_text(
+            action_x + tile - s(5), tile_y + tile - s(4), anchor="se",
+            font=badge_font, fill=self._ACTION_GLYPH,
+        )
+
+        # Button column at the right edge.
+        column_x = buttons_x + s(self._BUTTON_COLUMN) // 2 - s(3)
         button_font = (family, 10)
-
-        self._accent = tk.Frame(root, width=4, bg=self._BORDER)
-        self._accent.pack(side="left", fill="y")
-        content = tk.Frame(root, bg=self._BACKGROUND, padx=6, pady=3)
-        content.pack(side="left")
-
-        # Fixed widths keep the window from jumping as the icons change.
-        self._mode = self._make_label(content, (family, 16), self._MUTED)
-        self._mode.configure(width=2, anchor="center")
-        self._mode.pack(side="left")
-        self._mode_badge = self._make_label(content, badge_font, self._MUTED)
-        self._mode_badge.configure(width=1)
-        self._mode_badge.pack(side="left", anchor="s", pady=(0, 4))
-        self._action_chip = tk.Frame(content, bg=self._BACKGROUND)
-        self._action_chip.pack(side="left", padx=(4, 0))
-        self._action = self._make_label(
-            self._action_chip, (family, 12), self._ACTION_TEXT
-        )
-        self._action.configure(width=3, anchor="center", pady=2)
-        self._action.pack(side="left")
-        self._action_badge = self._make_label(
-            self._action_chip, badge_font, self._ACTION_TEXT
-        )
-        self._action_badge.configure(width=1, padx=0)
-        self._action_badge.pack(side="left", fill="y")
-        self._hand = self._make_label(content, ("Segoe UI", 9), self._MUTED)
-        self._hand.configure(text=_HAND_DOT)
-        self._hand.pack(side="left", padx=(6, 8))
-
         self._bypass_button = self._make_button(
-            content, button_font, self._request_bypass_toggle
+            column_x, height // 2 - s(21), button_font, self._request_bypass_toggle
         )
         self._camera_button = self._make_button(
-            content, button_font, self._request_camera_toggle
+            column_x, height // 2, button_font, self._request_camera_toggle
         )
         close_button = self._make_button(
-            content, button_font, lambda _event: self._request_quit()
+            column_x, height // 2 + s(21), button_font,
+            lambda _event: self._request_quit(),
         )
-        close_button.configure(text=self._icon(_CLOSE_ICON)[0])
-        # Fill every icon before measuring, so the first status does not
-        # resize the window.
-        self._mode.configure(text=self._icon(_MODE_ICONS["NO HAND"])[0])
-        self._bypass_button.configure(text=self._icon(_PAUSE_ICON)[0])
-        self._camera_button.configure(text=self._icon(_CAMERA_ICON)[0])
+        # The hide chevron sits at the bottom center, where the tab's
+        # chevron appears once the card is hidden.
+        hide_button = self._make_button(
+            width // 2, height - s(8), (family, 9), self._hide
+        )
+        canvas.itemconfigure(
+            hide_button, text=self._icon(_HIDE_ICON)[0], fill=self._MUTED
+        )
+        canvas.itemconfigure(close_button, text=self._icon(_CLOSE_ICON)[0])
+        canvas.itemconfigure(
+            self._bypass_button, text=self._icon(_PAUSE_ICON)[0]
+        )
+        canvas.itemconfigure(
+            self._camera_button, text=self._icon(_CAMERA_ICON)[0]
+        )
 
-        for widget in (root, self._accent, content, self._mode,
-                       self._mode_badge, self._action_chip, self._action,
-                       self._action_badge, self._hand):
-            widget.bind("<ButtonPress-1>", self._start_drag, add="+")
-            widget.bind("<B1-Motion>", self._drag, add="+")
+        canvas.bind("<ButtonPress-1>", self._start_drag)
+        canvas.bind("<B1-Motion>", self._drag)
+
+        # The tab shown instead of the card while it is hidden; a click on
+        # it anywhere shows the card again.
+        tab_width, tab_height = s(self._TAB_WIDTH), s(self._TAB_HEIGHT)
+        tab = tk.Canvas(
+            root, width=tab_width, height=tab_height, bg=key,
+            highlightthickness=0, borderwidth=0, cursor="hand2",
+        )
+        self._draw_card(tab, tab_width, tab_height, s(self._TAB_RADIUS))
+        self._tab_glyph = tab.create_text(
+            tab_width // 2, tab_height // 2, font=(family, 9),
+            fill=self._LINK, text=self._icon(_SHOW_ICON)[0],
+        )
+        tab.bind("<ButtonPress-1>", self._show_card)
+        self._tab = tab
+        self._tab_size = (tab_width, tab_height)
 
         root.update_idletasks()
-        width = root.winfo_reqwidth()
         x = (root.winfo_screenwidth() - width) // 2  # centered at the top
-        root.geometry(f"+{max(0, x)}+{OVERLAY_MARGIN_PX}")
+        self._home = (max(0, x), OVERLAY_MARGIN_PX)
+        root.geometry(f"{width}x{height}+{self._home[0]}+{self._home[1]}")
+        self._round_top_corners(self._home[1] > 0)
         root.update_idletasks()
         self._make_non_activating()
 
     def show(self, status: OverlayStatus) -> None:
-        """Display a status; widgets are only touched when it changes."""
+        """Display a status; items are only touched when it changes."""
         if status == self._last_status:
             return
         self._last_status = status
+        canvas = self._canvas
         color = bgr_to_hex(status.color)
-        self._accent.configure(bg=color)
         glyph, badge = self._icon(_MODE_ICONS.get(status.label, _UNKNOWN_ICON))
-        self._mode.configure(text=glyph, fg=color)
-        self._mode_badge.configure(text=badge, fg=color)
-        self._hand.configure(fg=bgr_to_hex(status.hand_color))
+        canvas.itemconfigure(self._mode, text=glyph, fill=color)
+        canvas.itemconfigure(self._mode_badge, text=badge, fill=color)
+        self._tab.itemconfigure(self._tab_glyph, fill=color)
+
+        canvas.itemconfigure(self._title, text=status.label.capitalize())
+        title_right = canvas.bbox(self._title)[2]
+        _, dot_y = canvas.coords(self._hand)
+        canvas.coords(self._hand, title_right + self._dot_gap, dot_y)
+        canvas.itemconfigure(self._hand, fill=bgr_to_hex(status.hand_color))
+
         if status.action:
             glyph, badge = self._icon(
                 _ACTION_ICONS.get(status.action, _UNKNOWN_ICON)
             )
-            background = self._ACTION_BACKGROUND
+            subtitle, subtitle_color = status.action.capitalize(), self._LINK
+            tile = self._ACTION_TILE
         else:
-            glyph, badge, background = "", "", self._BACKGROUND
-        self._action_chip.configure(bg=background)
-        self._action.configure(text=glyph, bg=background)
-        self._action_badge.configure(text=badge, bg=background)
-        self._camera_button.configure(
-            text=self._icon(_CAMERA_ICON)[0],
-            fg=self._LINK if status.camera_visible else self._MUTED,
+            glyph, badge, tile = "", "", self._ACTION_TILE_IDLE
+            subtitle, subtitle_color = status.hint, self._MUTED
+        canvas.itemconfigure(
+            self._subtitle, text=self._fit(subtitle), fill=subtitle_color
+        )
+        canvas.itemconfigure(self._action_tile, fill=tile)
+        canvas.itemconfigure(self._action, text=glyph)
+        canvas.itemconfigure(self._action_badge, text=badge)
+
+        canvas.itemconfigure(
+            self._camera_button,
+            fill=self._LINK if status.camera_visible else self._MUTED,
         )
         icon = _PLAY_ICON if status.bypassed else _PAUSE_ICON
-        self._bypass_button.configure(text=self._icon(icon)[0], fg=self._LINK)
+        canvas.itemconfigure(self._bypass_button, text=self._icon(icon)[0])
 
     def pump(self) -> None:
         """Process pending window events; call once per camera frame."""
@@ -260,17 +368,104 @@ class StatusOverlay:
         except self._tk.TclError:
             pass
 
-    def _make_label(self, parent: Any, font: tuple, color: str) -> Any:
-        return self._tk.Label(
-            parent, font=font, fg=color, bg=self._BACKGROUND, anchor="w"
-        )
+    def _hide(self, _event: Any) -> str:
+        """Swap the card for the small tab, at the top center of the screen."""
+        if not self._hidden:
+            self._hidden = True
+            tab_width, tab_height = self._tab_size
+            x = (self._root.winfo_screenwidth() - tab_width) // 2
+            self._canvas.pack_forget()
+            self._canvas.configure(cursor="")
+            self._tab.pack()
+            self._root.geometry(f"{tab_width}x{tab_height}+{max(0, x)}+0")
+        return "break"
 
-    def _make_button(self, parent: Any, font: tuple, command: Any) -> Any:
-        button = self._make_label(parent, font, self._LINK)
-        button.configure(cursor="hand2", padx=3)
-        button.pack(side="left")
-        button.bind("<Button-1>", command)
-        return button
+    def _show_card(self, _event: Any) -> str:
+        """Bring the card back at its starting place, even if it was dragged."""
+        if self._hidden:
+            self._hidden = False
+            width, height = self._card_size
+            x, y = self._home
+            self._tab.pack_forget()
+            self._canvas.pack()
+            self._root.geometry(f"{width}x{height}+{x}+{y}")
+            self._round_top_corners(y > 0)
+        return "break"
+
+    def _round_top_corners(self, rounded: bool) -> None:
+        """Round the card's top corners too, or square them again.
+
+        Docked at the top screen edge, the card hangs from it with square top
+        corners; anywhere else all four corners are rounded.
+        """
+        if rounded == self._top_rounded:
+            return
+        self._top_rounded = rounded
+        _, height = self._card_size
+        for item, x, inset in self._card_columns:
+            top = inset if rounded else 0
+            self._canvas.coords(item, x, top, x, height - inset)
+
+    def _draw_card(
+        self, canvas: Any, width: int, height: int, radius: int
+    ) -> list[tuple[int, int, int]]:
+        """Paint the card: a left-to-right gradient that hangs from the top
+        screen edge, so only its bottom corners are rounded.
+
+        Each one-pixel column is shortened near the left and right edges so
+        that together they trace the bottom corners. Returns each column's
+        (item, x, inset), so the top corners can be rounded later.
+        """
+        columns = []
+        left = _hex_to_rgb(self._GRADIENT_LEFT)
+        right = _hex_to_rgb(self._GRADIENT_RIGHT)
+        for x in range(width):
+            edge = min(x + 0.5, width - x - 0.5)
+            inset = 0.0
+            if edge < radius:
+                inset = radius - math.sqrt(radius**2 - (radius - edge) ** 2)
+            t = x / max(1, width - 1)
+            color = "#" + "".join(
+                f"{round(a + (b - a) * t):02x}" for a, b in zip(left, right)
+            )
+            inset_px = round(inset)
+            item = canvas.create_line(x, 0, x, height - inset_px, fill=color)
+            columns.append((item, x, inset_px))
+        return columns
+
+    def _rounded_rect(
+        self, x1: int, y1: int, x2: int, y2: int, radius: int, **options: Any
+    ) -> int:
+        """Draw a filled rounded rectangle as a smoothed polygon."""
+        points = (
+            x1 + radius, y1, x2 - radius, y1, x2, y1, x2, y1 + radius,
+            x2, y2 - radius, x2, y2, x2 - radius, y2, x1 + radius, y2,
+            x1, y2, x1, y2 - radius, x1, y1 + radius, x1, y1,
+        )
+        return self._canvas.create_polygon(points, smooth=True, **options)
+
+    def _make_button(self, x: int, y: int, font: tuple, command: Any) -> int:
+        canvas = self._canvas
+        item = canvas.create_text(
+            x, y, font=font, fill=self._LINK, tags=("button",)
+        )
+        canvas.tag_bind(item, "<ButtonPress-1>", command)
+        canvas.tag_bind(
+            item, "<Enter>", lambda _event: canvas.configure(cursor="hand2")
+        )
+        canvas.tag_bind(
+            item, "<Leave>", lambda _event: canvas.configure(cursor="")
+        )
+        return item
+
+    def _fit(self, text: str) -> str:
+        """Shorten text with an ellipsis so it fits the text column."""
+        measure = self._subtitle_font.measure
+        if measure(text) <= self._text_width:
+            return text
+        while text and measure(text + "…") > self._text_width:
+            text = text[:-1]
+        return text.rstrip() + "…"
 
     def _icon(self, icon: Icon) -> tuple[str, str]:
         """Return (glyph, badge): the icon-font glyph, or the Unicode
@@ -284,21 +479,28 @@ class StatusOverlay:
 
     def _request_camera_toggle(self, _event: Any) -> str:
         self._camera_toggle_requested = True
-        return "break"  # a click on the button does not start a drag
+        return "break"
 
     def _request_bypass_toggle(self, _event: Any) -> str:
         self._bypass_toggle_requested = True
-        return "break"  # a click on the button does not start a drag
+        return "break"
 
     def _start_drag(self, event: Any) -> None:
+        if "button" in self._canvas.gettags("current"):
+            self._drag_offset = None  # a click on a button does not drag
+            return
         self._drag_offset = (
             event.x_root - self._root.winfo_x(),
             event.y_root - self._root.winfo_y(),
         )
 
     def _drag(self, event: Any) -> None:
+        if self._drag_offset is None:
+            return
         dx, dy = self._drag_offset
-        self._root.geometry(f"+{event.x_root - dx}+{event.y_root - dy}")
+        y = max(0, event.y_root - dy)  # dragged up, it docks at the edge
+        self._root.geometry(f"+{event.x_root - dx}+{y}")
+        self._round_top_corners(y > 0)
 
     def _make_non_activating(self) -> None:
         """On Windows, keep clicks on the overlay from stealing focus.

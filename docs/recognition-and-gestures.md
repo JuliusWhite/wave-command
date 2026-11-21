@@ -189,7 +189,7 @@ Defaults are centralized in `src/config.py`:
 - `DOUBLE_CLICK_WINDOW_SEC = 1.0`, `DOUBLE_CLICK_PINCH_THRESHOLD = 0.55`, `DOUBLE_CLICK_CONFIRM_FRAMES = 1`
 - `HAND_TRACK_MAX_JUMP = 0.25`, `HAND_TRACK_LOST_FRAMES = 8` (which hand is tracked when several are in view)
 - `HUD_ALERT_DURATION_SEC = 2.5`
-- `SHOW_STATUS_OVERLAY = True`, `SHOW_CAMERA_PREVIEW = False`, `OVERLAY_OPACITY = 0.9`, `OVERLAY_MARGIN_PX = 20`
+- `SHOW_STATUS_OVERLAY = True`, `SHOW_CAMERA_PREVIEW = False`, `OVERLAY_OPACITY = 0.9`, `OVERLAY_MARGIN_PX = 0`
 - `CAMERA_ID = 0`
 
 Finger-angle limits (`FINGER_EXTENDED_ANGLE_DEGREES = 150`, `FINGER_CURLED_ANGLE_DEGREES = 130`) and the open-palm shape ratios are defined at the top of `src/recognition/gesture_engine.py`.

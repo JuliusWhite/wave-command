@@ -121,8 +121,9 @@ SHOW_STATUS_OVERLAY = True
 # or hidden at any time. Without the overlay the preview is always shown.
 SHOW_CAMERA_PREVIEW = False
 OVERLAY_OPACITY = 0.9
-# Distance of the overlay from the top screen edge at start (it is centered).
-OVERLAY_MARGIN_PX = 20
+# Distance of the overlay from the top screen edge at start (it is centered;
+# 0 docks it to the edge, where only its bottom corners are rounded).
+OVERLAY_MARGIN_PX = 0
 # MediaPipe Hands / common 21-point hand layout.
 HAND_CONNECTIONS: tuple[tuple[int, int], ...] = (
     (0, 1), (1, 2), (2, 3), (3, 4),

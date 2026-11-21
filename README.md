@@ -105,19 +105,20 @@ The app has its own logo (`assets/`) in the shortcuts, the taskbar, and the came
 
 ### Using the app
 
-Allow webcam access if prompted. A small, always-on-top **status overlay** opens centered at the top of the screen, styled in the Wave Command electric blue. It is a single row of icons:
+Allow webcam access if prompted. A small, always-on-top **status overlay** opens centered at the top of the screen, docked to the top edge. It is a rounded card in the Wave Command navy and electric blue, from left to right:
 
-- **Mode icon**, in the mode's color: check mark (`READY`), crossed-out eye (`NO HAND`), pointer arrow (`CURSOR`), mouse with **L**/**R** (`LEFT CLICK`/`RIGHT CLICK`), up/down chevrons (`SCROLL`), clock (`HISTORY`), stacked pages (`TABS`), task view (`WINDOWS`), or pause (`BYPASSED`, in the overlay's blue).
-- **Last action** in a blue box: arrows for back/forward and scroll up/down, stacked pages with an arrow for next/previous tab, task view with an arrow for next/previous window, or a mouse with **L**/**R** for clicks (**2** for a double-click). Empty when there is no recent action.
-- **Hand dot:** green while a hand is tracked, orange when none is in view. While bypassed it stays orange, even with a hand in view, because the hand drives nothing.
+- **Mode tile** with the mode icon in the mode's color: check mark (`READY`), crossed-out eye (`NO HAND`), pointer arrow (`CURSOR`), mouse with **L**/**R** (`LEFT CLICK`/`RIGHT CLICK`), up/down chevrons (`SCROLL`), clock (`HISTORY`), stacked pages (`TABS`), task view (`WINDOWS`), or pause (`BYPASSED`, in the overlay's blue).
+- **Mode name and hint:** the mode in bold (for example "Ready" or "Scroll") followed by the **hand dot**, green while a hand is tracked and orange when none is in view (while bypassed it stays orange, even with a hand in view, because the hand drives nothing). Below it is the mode's hint, or the last action in blue (for example "Next tab"); long hints are shortened with "…".
+- **Last action tile** in white: arrows for back/forward and scroll up/down, stacked pages with an arrow for next/previous tab, task view with an arrow for next/previous window, or a mouse with **L**/**R** for clicks (**2** for a double-click). Pale and empty when there is no recent action.
 
-Drag it anywhere with the mouse. It never takes focus, so shortcuts still reach the browser. Its buttons:
+Drag it anywhere with the mouse. Docked at the top edge, its top corners are square; dragged away from it, all four corners are rounded. Dragging it back up docks it at the edge again. It never takes focus, so shortcuts still reach the browser. Its buttons:
 
 - **pause** / **play**: turn gesture actions off and back on (both icons are in the overlay's blue). While bypassed, the hand is still tracked and the overlay shows the `BYPASSED` pause icon, but no cursor movement, clicks, scrolls, or shortcuts are sent. A gesture still held when you resume does not fire; release it and repeat it.
 - **camera**: open or close the camera preview (dimmed while the preview is hidden).
 - **✕**: quit Wave Command.
+- **hide** (the small chevron at the bottom center): shrink the overlay to a small tab at the top center of the screen. Click the tab to bring the overlay back at its starting position, docked at the top.
 
-The overlay's icons come from Windows' Segoe Fluent Icons (Windows 11) or Segoe MDL2 Assets (Windows 10); on other systems plain Unicode symbols are used. Mode hints are shown only in the camera preview.
+The pause/play, camera, and ✕ buttons sit in a column at the right edge. The overlay's icons come from Windows' Segoe Fluent Icons (Windows 11) or Segoe MDL2 Assets (Windows 10); on other systems plain Unicode symbols are used. On Windows the area around the rounded corners is see-through.
 
 The camera preview is hidden at start. When open, it displays hand landmarks and a compact HUD: the current mode in large type with a one-line hint, FPS, and the last action as a short banner. With the preview focused, press **B** to toggle bypass, **C** to hide the preview, **D** to toggle the detailed tuning readout (raw gesture, pointer and pinch state, poses, finger-curl, 3D flexion, and pinch ratios), and **Q** to quit.
 
