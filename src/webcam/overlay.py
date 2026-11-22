@@ -105,7 +105,8 @@ class StatusOverlay:
 
     Laid out like a "now playing" card: a tile with the current mode icon on
     the left, the mode name and a hint (or the last action) next to it, a
-    light tile with the last action icon on the right, and the pause/play,
+    tile with the last action icon on the right (a white icon on blue while
+    an action shows, a dim slot otherwise), and the pause/play,
     camera and close buttons in a column at the edge. A dot after the mode
     name is green when a hand is seen. Drag it anywhere with the mouse. The
     pause/play button turns gesture actions off and on, the camera button
@@ -118,12 +119,15 @@ class StatusOverlay:
     _GRADIENT_LEFT = "#173a63"
     _GRADIENT_RIGHT = "#0b1626"
     _TILE = "#1f4a7a"
-    _ACTION_TILE = "#ffffff"
-    _ACTION_TILE_IDLE = "#c9dcef"
+    # Same family as the mode tile, a step brighter, so an action stands out
+    # without clashing with the card's gradient.
+    _ACTION_TILE = "#2a5f96"
+    # A hair lighter than the card, so the empty slot almost disappears.
+    _ACTION_TILE_IDLE = "#112440"
     _TEXT = "#e8f6ff"
     _MUTED = "#7ea7cc"
     _LINK = "#5cd0ff"
-    _ACTION_GLYPH = "#1e8fff"
+    _ACTION_GLYPH = "#ffffff"
     # Painted around the rounded corners and made see-through (Windows).
     _TRANSPARENT_KEY = "#010203"
 
@@ -230,7 +234,7 @@ class StatusOverlay:
             font=self._subtitle_font, fill=self._MUTED,
         )
 
-        # Right tile: the last action, on white.
+        # Right tile: the last action, white on blue (a dim slot while idle).
         self._action_tile = self._rounded_rect(
             action_x, tile_y, action_x + tile, tile_y + tile,
             s(self._TILE_RADIUS), fill=self._ACTION_TILE_IDLE,
@@ -310,7 +314,9 @@ class StatusOverlay:
         glyph, badge = self._icon(_MODE_ICONS.get(status.label, _UNKNOWN_ICON))
         canvas.itemconfigure(self._mode, text=glyph, fill=color)
         canvas.itemconfigure(self._mode_badge, text=badge, fill=color)
-        self._tab.itemconfigure(self._tab_glyph, fill=color)
+        # While bypassed, the hidden tab's chevron takes the hand dot's red.
+        tab_color = bgr_to_hex(status.hand_color) if status.bypassed else color
+        self._tab.itemconfigure(self._tab_glyph, fill=tab_color)
 
         canvas.itemconfigure(self._title, text=status.label.capitalize())
         title_right = canvas.bbox(self._title)[2]

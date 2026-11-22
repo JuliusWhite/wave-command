@@ -109,14 +109,14 @@ Allow webcam access if prompted. A small, always-on-top **status overlay** opens
 
 - **Mode tile** with the mode icon in the mode's color: check mark (`READY`), crossed-out eye (`NO HAND`), pointer arrow (`CURSOR`), mouse with **L**/**R** (`LEFT CLICK`/`RIGHT CLICK`), up/down chevrons (`SCROLL`), clock (`HISTORY`), stacked pages (`TABS`), task view (`WINDOWS`), or pause (`BYPASSED`, in the overlay's blue).
 - **Mode name and hint:** the mode in bold (for example "Ready" or "Scroll") followed by the **hand dot**, green while a hand is tracked and orange when none is in view (while bypassed it stays orange, even with a hand in view, because the hand drives nothing). Below it is the mode's hint, or the last action in blue (for example "Next tab"); long hints are shortened with "…".
-- **Last action tile** in white: arrows for back/forward and scroll up/down, stacked pages with an arrow for next/previous tab, task view with an arrow for next/previous window, or a mouse with **L**/**R** for clicks (**2** for a double-click). Pale and empty when there is no recent action.
+- **Last action tile** with a white icon on a muted blue tile: arrows for back/forward and scroll up/down, stacked pages with an arrow for next/previous tab, task view with an arrow for next/previous window, or a mouse with **L**/**R** for clicks (**2** for a double-click). When there is no recent action, it is an empty slot barely lighter than the card.
 
 Drag it anywhere with the mouse. Docked at the top edge, its top corners are square; dragged away from it, all four corners are rounded. Dragging it back up docks it at the edge again. It never takes focus, so shortcuts still reach the browser. Its buttons:
 
 - **pause** / **play**: turn gesture actions off and back on (both icons are in the overlay's blue). While bypassed, the hand is still tracked and the overlay shows the `BYPASSED` pause icon, but no cursor movement, clicks, scrolls, or shortcuts are sent. A gesture still held when you resume does not fire; release it and repeat it.
 - **camera**: open or close the camera preview (dimmed while the preview is hidden).
 - **✕**: quit Wave Command.
-- **hide** (the small chevron at the bottom center): shrink the overlay to a small tab at the top center of the screen. Click the tab to bring the overlay back at its starting position, docked at the top.
+- **hide** (the small chevron at the bottom center): shrink the overlay to a small tab at the top center of the screen. The tab's chevron takes the current mode's color, or the hand dot's orange while bypassed. Click the tab to bring the overlay back at its starting position, docked at the top.
 
 The pause/play, camera, and ✕ buttons sit in a column at the right edge. The overlay's icons come from Windows' Segoe Fluent Icons (Windows 11) or Segoe MDL2 Assets (Windows 10); on other systems plain Unicode symbols are used. On Windows the area around the rounded corners is see-through.
 
