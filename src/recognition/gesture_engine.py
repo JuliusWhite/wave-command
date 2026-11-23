@@ -11,6 +11,8 @@ from enum import Enum
 from math import acos, degrees, hypot, sqrt
 
 from ..config import (
+    CLOSE_WINDOW_HOLD_SEC,
+    CLOSE_WINDOW_REARM_SEC,
     CONFIDENCE_THRESHOLD,
     DOUBLE_CLICK_CONFIRM_FRAMES,
     DOUBLE_CLICK_PINCH_THRESHOLD,
@@ -68,16 +70,18 @@ class GestureState(str, Enum):
     PREVIOUS_WINDOW = "PREVIOUS_WINDOW"
     BACK = "BACK"
     FORWARD = "FORWARD"
+    MIDDLE_FINGER_CLOSE_WINDOW = "MIDDLE_FINGER_CLOSE_WINDOW"
 
 
 class HandPose(str, Enum):
-    """Movement-driving poses tracked by the pose stabilizer."""
+    """Action-driving poses tracked by the pose stabilizer."""
 
     NONE = "NONE"
     OPEN_PALM = "OPEN_PALM"
     INDEX_ONLY = "INDEX_ONLY"
     TWO_FINGER = "TWO_FINGER"
     THREE_FINGER = "THREE_FINGER"
+    MIDDLE_ONLY = "MIDDLE_ONLY"
 
 
 def _bend_3d(first: Keypoint, joint: Keypoint, last: Keypoint) -> float | None:
@@ -140,6 +144,7 @@ class GestureDiagnostics:
     index_only_hand: bool = False
     two_finger_hand: bool = False
     three_finger_hand: bool = False
+    middle_only_hand: bool = False
     ring_pinky_curled: bool = False
     stable_pose: HandPose = HandPose.NONE
     pointer_pose: bool = False
@@ -249,12 +254,12 @@ class GestureEngine:
 
     1. ``_classify`` judges finger poses and pinch ratios on that frame alone.
     2. The pose stabilizer turns the per-frame open-palm, index-only,
-       two-finger, and three-finger poses into one stable pose that survives
-       brief detection glitches and resists takeover by stray frames of
-       another pose.
+       two-finger, three-finger, and middle-only poses into one stable pose
+       that survives brief detection glitches and resists takeover by stray
+       frames of another pose.
     3. The stable pose (or an active pointer session) owns the hand and
-       routes motion to exactly one action: scroll, history, tabs, windows,
-       or cursor.
+       routes it to exactly one action: scroll, history, tabs, windows,
+       close window, or cursor.
     4. Pinches are confirmed over several frames and held with hysteresis,
        so each deliberate pinch clicks once.
     """
@@ -299,6 +304,9 @@ class GestureEngine:
         self._history_swipe = SwipeTracker(HISTORY_SWIPE_DISTANCE_RATIO)
         self._tab_swipe = SwipeTracker(TAB_SWIPE_DISTANCE_RATIO)
         self._window_swipe = SwipeTracker(WINDOW_SWIPE_DISTANCE_RATIO)
+        self._close_hold_since: float | None = None
+        # Last time the pose that closed a window was seen; None once rearmed.
+        self._close_fired_seen_at: float | None = None
         self._pointer_active = False
         self._pointer_arming_frames = 0
         self._pointer_arm_origin: tuple[float, float] | None = None
@@ -326,8 +334,8 @@ class GestureEngine:
 
         Each pose owns one action: the pinch-ready pointer pose moves the
         cursor, the open palm scrolls, an index-only hand navigates history,
-        an index-and-middle hand switches tabs, and an index, middle, and
-        ring hand switches windows.
+        an index-and-middle hand switches tabs, an index, middle, and ring
+        hand switches windows, and a held middle finger closes the window.
         """
         result = self._evaluate(hand)
         return replace(result, pointer=self._pointer_sample)
@@ -536,7 +544,33 @@ class GestureEngine:
             }.get(direction, GestureState.IDLE)
             return GestureResult(gesture, None)
 
+        if pose == HandPose.MIDDLE_ONLY:
+            if not diagnostics.middle_only_hand:
+                return GestureResult(GestureState.IDLE, None)
+            return GestureResult(
+                GestureState.MIDDLE_FINGER_CLOSE_WINDOW
+                if self._close_hold_completed(now)
+                else GestureState.IDLE,
+                None,
+            )
+
         return idle
+
+    def _close_hold_completed(self, now: float) -> bool:
+        """Return True once per deliberate hold of the middle-finger pose."""
+        if self._close_fired_seen_at is not None:
+            if now - self._close_fired_seen_at < CLOSE_WINDOW_REARM_SEC:
+                # Still the hold that already closed a window.
+                self._close_fired_seen_at = now
+                return False
+            self._close_fired_seen_at = None
+        if self._close_hold_since is None:
+            self._close_hold_since = now
+        if now - self._close_hold_since < CLOSE_WINDOW_HOLD_SEC:
+            return False
+        self._close_hold_since = None
+        self._close_fired_seen_at = now
+        return True
 
     def _filter_fist(self, result: GestureResult) -> GestureResult:
         """Confirm, hold, and rearm the (currently disabled) fist gesture."""
@@ -594,6 +628,8 @@ class GestureEngine:
             return HandPose.TWO_FINGER
         if diagnostics.three_finger_hand:
             return HandPose.THREE_FINGER
+        if diagnostics.middle_only_hand:
+            return HandPose.MIDDLE_ONLY
         return HandPose.NONE
 
     def _update_pose(self, label: HandPose) -> HandPose:
@@ -647,7 +683,7 @@ class GestureEngine:
     ) -> None:
         """Arm one pinch from an upright open palm; disarm when stale.
 
-        Arming lapses when the hand is lost, when a swipe pose takes over,
+        Arming lapses when the hand is lost, when another pose takes over,
         or ``PINCH_ARM_TIMEOUT_SEC`` after the palm was last seen, so an old
         open palm cannot cause a click much later.
         """
@@ -663,6 +699,7 @@ class GestureEngine:
                 HandPose.INDEX_ONLY,
                 HandPose.TWO_FINGER,
                 HandPose.THREE_FINGER,
+                HandPose.MIDDLE_ONLY,
             }
             or now - self._pinch_armed_at > PINCH_ARM_TIMEOUT_SEC
         ):
@@ -762,11 +799,14 @@ class GestureEngine:
         through the pose while forming another one, or swiping with a bent
         finger, therefore does not start pointing. Once started, the session
         lasts while the ring and pinky stay curled, so pinching or
-        straightening the index finger does not end it.
+        straightening the index finger does not end it. Raising only the
+        middle finger, outside a held pinch, does end it.
         ``POINTER_EXIT_FRAMES`` tolerates brief detection loss.
         """
         if self._pointer_active:
-            if diagnostics.ring_pinky_curled:
+            if diagnostics.ring_pinky_curled and not (
+                diagnostics.middle_only_hand and self._pinch_held is None
+            ):
                 self._pointer_exit_frames = 0
                 return True
             self._pointer_exit_frames += 1
@@ -952,6 +992,7 @@ class GestureEngine:
         self._history_swipe.reset()
         self._tab_swipe.reset()
         self._window_swipe.reset()
+        self._close_hold_since = None
 
     def _smooth_flex(
         self,
@@ -1174,6 +1215,30 @@ class GestureEngine:
             and curled_for_pointing(2)
             and curled_for_pointing(3)
         )
+        # An upright hand with only the middle finger extended. The index must
+        # be folded into the palm, unlike in a left pinch, and the thumb must
+        # be away from the middle fingertip, unlike in a right pinch.
+        middle_only_hand = (
+            ring_pinky_curled
+            and middle_tip.y < middle_mcp.y < wrist.y
+            and finger_angles[1] is not None
+            and finger_angles[1] >= FINGER_EXTENDED_ANGLE_DEGREES
+            and (
+                finger_flex[1] is None
+                or finger_flex[1] < POINTER_CLAW_MIN_FLEX_DEGREES
+            )
+            and finger_angles[0] is not None
+            and finger_angles[0] <= FINGER_CURLED_ANGLE_DEGREES
+            and curled_by_tip.get(8, False)
+            and (
+                finger_flex[0] is None
+                or finger_flex[0] >= POINTER_CURLED_FLEX_DEGREES
+            )
+            and (
+                right_pinch_ratio is None
+                or right_pinch_ratio > self.pinch_threshold
+            )
+        )
         # Pinch-ready pose: ring and pinky curled, index and middle relaxed
         # (bent, but not curled into a fist and not both straight, which is
         # the two-finger tab pose).
@@ -1200,6 +1265,7 @@ class GestureEngine:
                 )
                 and not index_only_hand
             )
+        pointer_pose = pointer_pose and not middle_only_hand
         palm_x = palm_y = None
         if visible_fingers == len(finger_tips):
             palm_points = [wrist] + [
@@ -1275,6 +1341,7 @@ class GestureEngine:
             index_only_hand=index_only_hand,
             two_finger_hand=two_finger_hand,
             three_finger_hand=three_finger_hand,
+            middle_only_hand=middle_only_hand,
             ring_pinky_curled=ring_pinky_curled,
             pointer_pose=pointer_pose,
             palm_x=palm_x,

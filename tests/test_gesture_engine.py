@@ -2,6 +2,8 @@ import unittest
 from dataclasses import replace
 
 from src.config import (
+    CLOSE_WINDOW_HOLD_SEC,
+    CLOSE_WINDOW_REARM_SEC,
     POINTER_CLAW_MIN_FLEX_DEGREES,
     PINCH_ARM_TIMEOUT_SEC,
     SWIPE_RETURN_LOCKOUT_SEC,
@@ -1579,6 +1581,84 @@ class DepthClawTests(unittest.TestCase):
         self.assertFalse(engine.diagnostics.pointer_active)
         engine.evaluate(make_depth_claw())
         self.assertTrue(engine.diagnostics.pointer_active)
+
+def make_middle_only_hand() -> HandPrediction:
+    hand = make_open_hand(300.0)
+    points = list(hand.keypoints)
+    for mcp_index, tip_index in ((5, 8), (13, 16), (17, 20)):
+        mcp = points[mcp_index]
+        points[tip_index] = replace(points[tip_index], y=mcp.y - 10.0)
+    # Thumb tucked over the folded index, as in a natural middle finger.
+    return with_thumb_at(
+        HandPrediction(tuple(points), hand.confidence), 60.0, 195.0
+    )
+
+
+class MiddleFingerTests(unittest.TestCase):
+    CLOSE = GestureState.MIDDLE_FINGER_CLOSE_WINDOW
+
+    def setUp(self) -> None:
+        self.now = 10.0
+        self.engine = GestureEngine(clock=lambda: self.now)
+
+    def run_for(self, hand, seconds: float) -> list[GestureState]:
+        gestures = []
+        for _ in range(round(seconds / 0.05)):
+            gestures.append(self.engine.evaluate(hand).gesture)
+            self.now += 0.05
+        return gestures
+
+    def test_hold_closes_once(self) -> None:
+        for hand in (
+            make_middle_only_hand(), with_depth(make_middle_only_hand())
+        ):
+            self.setUp()
+            gestures = self.run_for(hand, 4.0)
+            self.assertEqual(gestures.count(self.CLOSE), 1)
+            self.assertEqual(
+                set(gestures), {self.CLOSE, GestureState.IDLE}
+            )
+
+    def test_brief_pose_does_not_close(self) -> None:
+        self.run_for(make_middle_only_hand(), CLOSE_WINDOW_HOLD_SEC - 0.1)
+        self.run_for(make_open_hand(300.0), 0.3)
+        gestures = self.run_for(
+            make_middle_only_hand(), CLOSE_WINDOW_HOLD_SEC - 0.1
+        )
+        self.assertNotIn(self.CLOSE, gestures)
+
+    def test_detection_gap_does_not_close_twice_but_release_rearms(
+        self,
+    ) -> None:
+        hand = make_middle_only_hand()
+        self.assertIn(self.CLOSE, self.run_for(hand, 1.0))
+        self.run_for(None, CLOSE_WINDOW_REARM_SEC / 2)
+        self.assertNotIn(self.CLOSE, self.run_for(hand, 3.0))
+        self.run_for(None, CLOSE_WINDOW_REARM_SEC + 0.2)
+        self.assertIn(self.CLOSE, self.run_for(hand, 1.0))
+
+    def test_works_after_pointing_without_clicking(self) -> None:
+        # The thumb starts away from the fingers, so nothing is pinched.
+        start_pointer(self.engine)
+        gestures = self.run_for(make_middle_only_hand(), 1.0)
+        self.assertEqual(gestures.count(self.CLOSE), 1)
+        self.assertEqual(set(gestures), {self.CLOSE, GestureState.IDLE})
+
+    def test_other_poses_are_not_middle_only(self) -> None:
+        for hand in (
+            make_open_hand(300.0),
+            make_index_only_hand(300.0),
+            make_index_middle_hand(300.0),
+            make_three_finger_hand(300.0),
+            make_pointer_hand(),
+            make_depth_claw(),
+            rotate_hand(make_middle_only_hand(), 180.0),
+            with_thumb_at(make_middle_only_hand(), 100.0, 130.0),
+        ):
+            engine = GestureEngine()
+            engine.evaluate(hand)
+            self.assertFalse(engine.diagnostics.middle_only_hand)
+
 
 if __name__ == "__main__":
     unittest.main()

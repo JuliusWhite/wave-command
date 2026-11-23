@@ -54,6 +54,12 @@ SWIPE_WINDOW_SEC = 0.8
 # ignored for this long, or until the pose is released.
 SWIPE_RETURN_LOCKOUT_SEC = 1.2
 TAB_SWITCH_COOLDOWN_SEC = 1.0
+# The middle-finger pose must be held this long before it closes the window,
+# so passing through it while forming another pose never does.
+CLOSE_WINDOW_HOLD_SEC = 0.6
+# After closing, the pose must be gone this long before it can close another
+# window, so a detection glitch during one long hold never closes two.
+CLOSE_WINDOW_REARM_SEC = 1.0
 # Pointer (cursor) control with the pinch-ready pose.
 # Frames the pose must be held before the cursor starts following the palm.
 POINTER_ENTER_FRAMES = 5

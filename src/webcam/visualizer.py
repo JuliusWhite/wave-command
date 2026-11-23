@@ -331,6 +331,12 @@ class Visualizer:
                 "swipe sideways: previous / next",
                 self._WINDOWS_COLOR,
             )
+        if diagnostics.stable_pose == HandPose.MIDDLE_ONLY:
+            return (
+                "CLOSE WINDOW",
+                "hold to close the current window",
+                self._OPEN_COLOR,
+            )
         if not state.hands:
             return "NO HAND", "show your hand to the camera", self._MUTED_COLOR
         if diagnostics.pinch_enabled:
@@ -490,6 +496,11 @@ class Visualizer:
             (
                 "Three-finger window pose: "
                 f"{'detected' if diagnostics.three_finger_hand else 'not detected'}",
+                self._TEXT_COLOR,
+            ),
+            (
+                "Middle-finger close pose: "
+                f"{'detected' if diagnostics.middle_only_hand else 'not detected'}",
                 self._TEXT_COLOR,
             ),
             (

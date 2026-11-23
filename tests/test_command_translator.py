@@ -298,7 +298,37 @@ class CommandTranslatorTests(unittest.TestCase):
 
         self.assertEqual(close_calls, [True])
 
-    def test_close_window_action_is_disabled(self) -> None:
+    def test_middle_finger_closes_window_once_and_survives_errors(self) -> None:
+        messages: list[str] = []
+        close = Mock(side_effect=[None, OSError("nope")])
+        translator = CommandTranslator(
+            emit=messages.append, close_window=close
+        )
+        gesture = GestureState.MIDDLE_FINGER_CLOSE_WINDOW
+
+        self.assertIn("CLOSE_WINDOW (Requested)", translator.process(gesture))
+        self.assertIsNone(translator.process(gesture))
+        close.assert_called_once_with()
+        translator.process(GestureState.IDLE)
+        self.assertIsNone(translator.process(gesture))
+        self.assertIn("nope", messages[-1])
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows API only")
+    def test_close_window_never_targets_the_desktop(self) -> None:
+        def class_name(_window, buffer, _size):
+            buffer.value = "Progman"
+            return 7
+
+        user32 = Mock(
+            GetForegroundWindow=Mock(return_value=1),
+            GetClassNameW=Mock(side_effect=class_name),
+        )
+        with patch("ctypes.WinDLL", return_value=user32):
+            with self.assertRaisesRegex(OSError, "desktop"):
+                _request_windows_foreground_close()
+        user32.PostMessageW.assert_not_called()
+
+    def test_fist_close_window_action_is_disabled(self) -> None:
         close_calls: list[bool] = []
         translator = CommandTranslator(
             cooldown_sec=0,

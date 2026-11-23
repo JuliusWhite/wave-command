@@ -20,6 +20,10 @@ from ..recognition.gesture_engine import GestureState
 MouseButton = Literal["left", "right"]
 WM_SYSCOMMAND = 0x0112
 SC_CLOSE = 0xF060
+# Desktop and taskbar windows; closing these would open the shutdown dialog.
+SHELL_WINDOW_CLASSES = frozenset(
+    {"Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd"}
+)
 
 
 def _pyautogui():
@@ -85,6 +89,12 @@ def _request_windows_foreground_close() -> None:
     user32 = ctypes.WinDLL("user32", use_last_error=True)
     user32.GetForegroundWindow.argtypes = ()
     user32.GetForegroundWindow.restype = wintypes.HWND
+    user32.GetClassNameW.argtypes = (
+        wintypes.HWND,
+        wintypes.LPWSTR,
+        ctypes.c_int,
+    )
+    user32.GetClassNameW.restype = ctypes.c_int
     user32.PostMessageW.argtypes = (
         wintypes.HWND,
         wintypes.UINT,
@@ -96,6 +106,11 @@ def _request_windows_foreground_close() -> None:
     window = user32.GetForegroundWindow()
     if not window:
         raise OSError("Windows has no foreground window to close")
+
+    class_name = ctypes.create_unicode_buffer(256)
+    user32.GetClassNameW(window, class_name, len(class_name))
+    if class_name.value in SHELL_WINDOW_CLASSES:
+        raise OSError("The desktop or taskbar is focused; nothing to close")
 
     if not user32.PostMessageW(window, WM_SYSCOMMAND, SC_CLOSE, 0):
         raise OSError(
@@ -118,7 +133,8 @@ class CommandTranslator:
         GestureState.FORWARD: "FORWARD",
         GestureState.SCROLL_UP: "SCROLL_UP",
         GestureState.SCROLL_DOWN: "SCROLL_DOWN",
-        # Close-window action disabled; uncomment to restore.
+        GestureState.MIDDLE_FINGER_CLOSE_WINDOW: "CLOSE_WINDOW",
+        # Fist close-window action disabled; uncomment to restore.
         # GestureState.FIST_CLOSE_WINDOW: "CLOSE_WINDOW",
     }
     BUTTONS: dict[GestureState, MouseButton] = {
@@ -220,6 +236,7 @@ class CommandTranslator:
             return None
 
         action = self.ACTIONS[gesture]
+        status = "Executed"
         # Retained for reactivation with the mapping above.
         # if gesture == GestureState.FIST_CLOSE_WINDOW:
         #     self._close_window()
@@ -229,6 +246,17 @@ class CommandTranslator:
                 return None
             self._scroll(scroll_amount)
             if gesture == previous_gesture:
+                return None
+        elif gesture == GestureState.MIDDLE_FINGER_CLOSE_WINDOW:
+            # The app may still ask to save, so this is only a request.
+            status = "Requested"
+            try:
+                self._close_window()
+            except OSError as error:
+                self._emit(
+                    "[WAVE COMMAND - TRANSLATOR] Could not close the window: "
+                    f"{error}"
+                )
                 return None
         elif gesture == GestureState.NEXT_TAB:
             self._hotkey("ctrl", "tab")
@@ -273,7 +301,6 @@ class CommandTranslator:
         #     if gesture == GestureState.FIST_CLOSE_WINDOW
         #     else "Executed"
         # )
-        status = "Executed"
         message = (
             "[WAVE COMMAND - TRANSLATOR] Gesture detected! -> "
             f"Action: {action} ({status})"
